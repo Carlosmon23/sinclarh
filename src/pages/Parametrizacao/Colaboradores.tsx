@@ -5,7 +5,7 @@ import { useDataStore } from '../../stores/dataStore';
 import { Colaborador } from '../../types';
 
 const Colaboradores: React.FC = () => {
-  const { colaboradores, cargos, equipes, addColaborador, updateColaborador, deleteColaborador } = useDataStore();
+  const { colaboradores, cargos, equipes, filiais, addColaborador, updateColaborador, deleteColaborador } = useDataStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingColaborador, setEditingColaborador] = useState<Colaborador | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +16,7 @@ const Colaboradores: React.FC = () => {
     email: '',
     equipeId: '',
     setor: '',
+    filialId: '',
     dataAdmissao: '',
     dataDemissao: '',
     situacao: 'ATIVO' as 'ATIVO' | 'DESLIGADO',
@@ -75,6 +76,7 @@ const Colaboradores: React.FC = () => {
       email: '',
       equipeId: '',
       setor: '',
+      filialId: '',
       dataAdmissao: '',
       dataDemissao: '',
       situacao: 'ATIVO',
@@ -97,6 +99,7 @@ const Colaboradores: React.FC = () => {
       email: colaborador.email,
       equipeId: colaborador.equipeId || '',
       setor: colaborador.setor || '',
+      filialId: colaborador.filialId || '',
       dataAdmissao: colaborador.dataAdmissao,
       dataDemissao: colaborador.dataDemissao || '',
       situacao: colaborador.situacao,
@@ -241,6 +244,23 @@ const Colaboradores: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Filial
+              </label>
+              <select
+                value={formData.filialId}
+                onChange={(e) => setFormData({ ...formData, filialId: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Selecione uma filial</option>
+                {filiais.map((filial) => (
+                  <option key={filial.id} value={filial.id}>
+                    {filial.nome} ({filial.codigo})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Data de Admissão *
               </label>
               <input
@@ -366,6 +386,9 @@ const Colaboradores: React.FC = () => {
                   Setor
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Filial
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Cargo
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -399,6 +422,9 @@ const Colaboradores: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {colaborador.setor}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {colaborador.filialId ? filiais.find(f => f.id === colaborador.filialId)?.nome || '-' : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {getCargoNome(colaborador.cargoId)}

@@ -11,7 +11,8 @@ import {
   AvaliacaoCiclo,
   AvaliacaoCompetenciasDoCiclo,
   AvaliacaoParticipante,
-  RespostaAvaliacao
+  RespostaAvaliacao,
+  Filial
 } from '../types';
 
 // Empresa
@@ -19,11 +20,42 @@ export const mockEmpresa: Empresa = {
   id: 'emp-001',
   nome: 'TechCorp Soluções',
   cnpj: '12.345.678/0001-90',
-  logo: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=modern%20tech%20company%20logo%20with%20geometric%20shapes%20and%20blue%20color%20scheme%20professional%20corporate%20design&image_size=square',
+  logo: undefined, // Logo será exibido via ícone SVG
   ativa: true,
   criadaEm: '2024-01-01T00:00:00Z',
   atualizadaEm: '2024-01-01T00:00:00Z'
 };
+
+// Filiais
+export const mockFiliais: Filial[] = [
+  {
+    id: 'filial-001',
+    codigo: 'FIL-SP',
+    nome: 'São Paulo',
+    empresaId: 'emp-001',
+    ativa: true,
+    criadaEm: '2024-01-01T00:00:00Z',
+    atualizadaEm: '2024-01-01T00:00:00Z'
+  },
+  {
+    id: 'filial-002',
+    codigo: 'FIL-RJ',
+    nome: 'Rio de Janeiro',
+    empresaId: 'emp-001',
+    ativa: true,
+    criadaEm: '2024-01-01T00:00:00Z',
+    atualizadaEm: '2024-01-01T00:00:00Z'
+  },
+  {
+    id: 'filial-003',
+    codigo: 'FIL-MG',
+    nome: 'Belo Horizonte',
+    empresaId: 'emp-001',
+    ativa: true,
+    criadaEm: '2024-01-01T00:00:00Z',
+    atualizadaEm: '2024-01-01T00:00:00Z'
+  }
+];
 
 // Cargos
 export const mockCargos: Cargo[] = [
@@ -262,280 +294,276 @@ export const mockTiposCompetencia: TipoCompetencia[] = [
 export const mockEscalasCompetencia: EscalaCompetencia[] = [
   {
     id: 'escala-001',
-    codigo: 'INS',
+    codigo: 'PDR',
     tipo: 'AVALIACAO_DESEMPENHO',
-    nome: 'Insuficiente',
-    peso: 1,
-    descricao: 'Desempenho abaixo do esperado',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-001',
+        nota: 'Insuficiente',
+        peso: 1,
+        escalaId: 'escala-001',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-002',
+        nota: 'Adequado',
+        peso: 2,
+        escalaId: 'escala-001',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-003',
+        nota: 'Bom',
+        peso: 3,
+        escalaId: 'escala-001',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-004',
+        nota: 'Excelente',
+        peso: 4,
+        escalaId: 'escala-001',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
   },
-  {
-    id: 'escala-002',
-    codigo: 'ADE',
-    tipo: 'AVALIACAO_DESEMPENHO',
-    nome: 'Adequado',
-    peso: 2,
-    descricao: 'Desempenho dentro do esperado',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-003',
-    codigo: 'BOM',
-    tipo: 'AVALIACAO_DESEMPENHO',
-    nome: 'Bom',
-    peso: 3,
-    descricao: 'Desempenho acima do esperado',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-004',
-    codigo: 'EXC',
-    tipo: 'AVALIACAO_DESEMPENHO',
-    nome: 'Excelente',
-    peso: 4,
-    descricao: 'Desempenho excepcional',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  // Escalas para OnBoarding
+  // Escala para OnBoarding
   {
     id: 'escala-005',
-    codigo: 'ON-INS',
+    codigo: 'ON-PDR',
     tipo: 'ONBOARDING',
-    nome: 'Insuficiente',
-    peso: 1,
-    descricao: 'Integração insuficiente, precisa de suporte adicional',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-005',
+        nota: 'Insuficiente',
+        peso: 1,
+        escalaId: 'escala-005',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-006',
+        nota: 'Adequado',
+        peso: 2,
+        escalaId: 'escala-005',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-007',
+        nota: 'Bom',
+        peso: 3,
+        escalaId: 'escala-005',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-008',
+        nota: 'Excelente',
+        peso: 4,
+        escalaId: 'escala-005',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
   },
-  {
-    id: 'escala-006',
-    codigo: 'ON-ADE',
-    tipo: 'ONBOARDING',
-    nome: 'Adequado',
-    peso: 2,
-    descricao: 'Integração adequada ao período',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-007',
-    codigo: 'ON-BOM',
-    tipo: 'ONBOARDING',
-    nome: 'Bom',
-    peso: 3,
-    descricao: 'Integração acima do esperado',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-008',
-    codigo: 'ON-EXC',
-    tipo: 'ONBOARDING',
-    nome: 'Excelente',
-    peso: 4,
-    descricao: 'Integração excepcional, colaborador se adaptou muito bem',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  // Escalas para OffBoarding
+  // Escala para OffBoarding
   {
     id: 'escala-009',
-    codigo: 'OFF-INS',
+    codigo: 'OFF-PDR',
     tipo: 'OFFBOARDING',
-    nome: 'Insatisfeito',
-    peso: 1,
-    descricao: 'Colaborador muito insatisfeito com a experiência',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-009',
+        nota: 'Insatisfeito',
+        peso: 1,
+        escalaId: 'escala-009',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-010',
+        nota: 'Neutro',
+        peso: 2,
+        escalaId: 'escala-009',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-011',
+        nota: 'Satisfeito',
+        peso: 3,
+        escalaId: 'escala-009',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-012',
+        nota: 'Muito Satisfeito',
+        peso: 4,
+        escalaId: 'escala-009',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
   },
-  {
-    id: 'escala-010',
-    codigo: 'OFF-NEU',
-    tipo: 'OFFBOARDING',
-    nome: 'Neutro',
-    peso: 2,
-    descricao: 'Experiência neutra',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-011',
-    codigo: 'OFF-SAT',
-    tipo: 'OFFBOARDING',
-    nome: 'Satisfeito',
-    peso: 3,
-    descricao: 'Colaborador satisfeito com a experiência',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-012',
-    codigo: 'OFF-MSAT',
-    tipo: 'OFFBOARDING',
-    nome: 'Muito Satisfeito',
-    peso: 4,
-    descricao: 'Colaborador muito satisfeito com toda experiência na empresa',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  // Escalas para Avaliação Direcionada
+  // Escala para Avaliação Direcionada
   {
     id: 'escala-013',
-    codigo: 'DIR-INS',
+    codigo: 'DIR-PDR',
     tipo: 'AVALIACAO_DIRECIONADA',
-    nome: 'Insuficiente',
-    peso: 1,
-    descricao: 'Competência insuficiente para o esperado',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-013',
+        nota: 'Insuficiente',
+        peso: 1,
+        escalaId: 'escala-013',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-014',
+        nota: 'Adequado',
+        peso: 2,
+        escalaId: 'escala-013',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-015',
+        nota: 'Bom',
+        peso: 3,
+        escalaId: 'escala-013',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-016',
+        nota: 'Excelente',
+        peso: 4,
+        escalaId: 'escala-013',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
   },
-  {
-    id: 'escala-014',
-    codigo: 'DIR-ADE',
-    tipo: 'AVALIACAO_DIRECIONADA',
-    nome: 'Adequado',
-    peso: 2,
-    descricao: 'Competência adequada',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-015',
-    codigo: 'DIR-BOM',
-    tipo: 'AVALIACAO_DIRECIONADA',
-    nome: 'Bom',
-    peso: 3,
-    descricao: 'Competência acima do esperado',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-016',
-    codigo: 'DIR-EXC',
-    tipo: 'AVALIACAO_DIRECIONADA',
-    nome: 'Excelente',
-    peso: 4,
-    descricao: 'Competência excepcional',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  // Escalas para Pesquisa
+  // Escala para Pesquisa
   {
     id: 'escala-017',
-    codigo: 'PES-1',
+    codigo: 'PES-PDR',
     tipo: 'PESQUISA',
-    nome: 'Discordo Totalmente',
-    peso: 1,
-    descricao: 'Discordo totalmente da afirmação',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-017',
+        nota: 'Discordo Totalmente',
+        peso: 1,
+        escalaId: 'escala-017',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-018',
+        nota: 'Discordo',
+        peso: 2,
+        escalaId: 'escala-017',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-019',
+        nota: 'Neutro',
+        peso: 3,
+        escalaId: 'escala-017',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-020',
+        nota: 'Concordo',
+        peso: 4,
+        escalaId: 'escala-017',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-021',
+        nota: 'Concordo Totalmente',
+        peso: 5,
+        escalaId: 'escala-017',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
   },
-  {
-    id: 'escala-018',
-    codigo: 'PES-2',
-    tipo: 'PESQUISA',
-    nome: 'Discordo',
-    peso: 2,
-    descricao: 'Discordo da afirmação',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-019',
-    codigo: 'PES-3',
-    tipo: 'PESQUISA',
-    nome: 'Neutro',
-    peso: 3,
-    descricao: 'Não concordo nem discordo',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-020',
-    codigo: 'PES-4',
-    tipo: 'PESQUISA',
-    nome: 'Concordo',
-    peso: 4,
-    descricao: 'Concordo com a afirmação',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-021',
-    codigo: 'PES-5',
-    tipo: 'PESQUISA',
-    nome: 'Concordo Totalmente',
-    peso: 5,
-    descricao: 'Concordo totalmente com a afirmação',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  // Escalas para Feedback (simples)
+  // Escala para Feedback
   {
     id: 'escala-022',
-    codigo: 'FB-POS',
+    codigo: 'FB-PDR',
     tipo: 'FEEDBACK',
-    nome: 'Positivo',
-    peso: 1,
-    descricao: 'Feedback positivo',
-    empresaId: 'emp-001',
-    ativa: true,
-    criadaEm: '2024-01-01T00:00:00Z',
-    atualizadaEm: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'escala-023',
-    codigo: 'FB-CONS',
-    tipo: 'FEEDBACK',
-    nome: 'Construtivo',
-    peso: 1,
-    descricao: 'Feedback construtivo',
+    nome: 'Padrão',
+    notas: [
+      {
+        id: 'nota-022',
+        nota: 'Precisa Melhorar',
+        peso: 1,
+        escalaId: 'escala-022',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-023',
+        nota: 'Adequado',
+        peso: 2,
+        escalaId: 'escala-022',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-024',
+        nota: 'Bom',
+        peso: 3,
+        escalaId: 'escala-022',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      },
+      {
+        id: 'nota-025',
+        nota: 'Excelente',
+        peso: 4,
+        escalaId: 'escala-022',
+        criadaEm: '2024-01-01T00:00:00Z',
+        atualizadaEm: '2024-01-01T00:00:00Z'
+      }
+    ],
     empresaId: 'emp-001',
     ativa: true,
     criadaEm: '2024-01-01T00:00:00Z',
@@ -714,15 +742,95 @@ export const mockAvaliacoesCiclo: AvaliacaoCiclo[] = [
     dataInicio: '2024-11-01',
     dataLimite: '2024-11-15',
     dataFim: '2024-11-15',
-    status: 'CRIADA',
+    status: 'EM_ANDAMENTO',
     incluiTecnica: false,
     incluiComportamental: false,
-    escalaId: 'escala-001',
+    escalaId: 'escala-017',
     competenciasSelecionadas: [],
     instrucoes: 'Responda anonimamente sobre motivação e percepção geral.',
     empresaId: 'emp-001',
     criadaEm: '2024-11-01T00:00:00Z',
     atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  // Avaliação Direcionada
+  {
+    id: 'ciclo-007',
+    nome: 'Avaliação Direcionada - Competências Técnicas Q4 2024',
+    descricao: 'Avaliação focada em competências técnicas específicas',
+    tipo: 'AVALIACAO_DIRECIONADA',
+    tipoAvaliacao: '180',
+    dataInicio: '2024-10-01',
+    dataLimite: '2024-10-31',
+    dataFim: '2024-10-31',
+    status: 'EM_ANDAMENTO',
+    incluiTecnica: true,
+    incluiComportamental: false,
+    escalaId: 'escala-013',
+    competenciasSelecionadas: ['comp-001', 'comp-002'],
+    instrucoes: 'Avalie as competências técnicas selecionadas.',
+    empresaId: 'emp-001',
+    criadaEm: '2024-09-25T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
+  },
+  // Onboarding
+  {
+    id: 'ciclo-008',
+    nome: 'Avaliação de Onboarding - Novos Colaboradores Outubro 2024',
+    descricao: 'Avaliação de integração de novos colaboradores',
+    tipo: 'ONBOARDING',
+    tipoAvaliacao: '90',
+    dataInicio: '2024-10-15',
+    dataLimite: '2024-11-15',
+    dataFim: '2024-11-15',
+    status: 'EM_ANDAMENTO',
+    incluiTecnica: false,
+    incluiComportamental: true,
+    escalaId: 'escala-005',
+    competenciasSelecionadas: ['comp-003', 'comp-005'],
+    instrucoes: 'Avalie a adaptação e integração do novo colaborador.',
+    empresaId: 'emp-001',
+    criadaEm: '2024-10-10T00:00:00Z',
+    atualizadaEm: '2024-10-15T00:00:00Z'
+  },
+  // Offboarding
+  {
+    id: 'ciclo-009',
+    nome: 'Avaliação de Offboarding - Novembro 2024',
+    descricao: 'Coleta de feedback de colaboradores em processo de desligamento',
+    tipo: 'OFFBOARDING',
+    tipoAvaliacao: '90',
+    dataInicio: '2024-11-01',
+    dataLimite: '2024-11-30',
+    dataFim: '2024-11-30',
+    status: 'EM_ANDAMENTO',
+    incluiTecnica: false,
+    incluiComportamental: true,
+    escalaId: 'escala-009',
+    competenciasSelecionadas: ['comp-003', 'comp-004'],
+    instrucoes: 'Avalie sua experiência durante o período na empresa.',
+    empresaId: 'emp-001',
+    criadaEm: '2024-10-25T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  // Feedback
+  {
+    id: 'ciclo-010',
+    nome: 'Feedback Contínuo - Outubro 2024',
+    descricao: 'Feedback contínuo sobre desempenho e desenvolvimento',
+    tipo: 'FEEDBACK',
+    tipoAvaliacao: '360',
+    dataInicio: '2024-10-01',
+    dataLimite: '2024-10-31',
+    dataFim: '2024-10-31',
+    status: 'EM_ANDAMENTO',
+    incluiTecnica: false,
+    incluiComportamental: true,
+    escalaId: 'escala-022',
+    competenciasSelecionadas: ['comp-003', 'comp-004'],
+    instrucoes: 'Forneça feedback construtivo sobre o desempenho.',
+    empresaId: 'emp-001',
+    criadaEm: '2024-09-30T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
   }
 ];
 
@@ -834,6 +942,110 @@ export const mockAvaliacaoParticipantes: AvaliacaoParticipante[] = [
     status: 'PENDENTE',
     criadaEm: '2024-01-01T00:00:00Z',
     atualizadaEm: '2024-01-01T00:00:00Z'
+  },
+  // Participantes para Avaliação Direcionada (ciclo-007)
+  {
+    id: 'part-008',
+    avaliacaoCicloId: 'ciclo-007',
+    avaliadorId: 'colab-001',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-01T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
+  },
+  {
+    id: 'part-009',
+    avaliacaoCicloId: 'ciclo-007',
+    avaliadorId: 'colab-002',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-01T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
+  },
+  // Participantes para Onboarding (ciclo-008)
+  {
+    id: 'part-010',
+    avaliacaoCicloId: 'ciclo-008',
+    avaliadorId: 'colab-001',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-15T00:00:00Z',
+    atualizadaEm: '2024-10-15T00:00:00Z'
+  },
+  {
+    id: 'part-011',
+    avaliacaoCicloId: 'ciclo-008',
+    avaliadorId: 'colab-001',
+    avaliadoId: 'colab-003',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-15T00:00:00Z',
+    atualizadaEm: '2024-10-15T00:00:00Z'
+  },
+  // Participantes para Offboarding (ciclo-009)
+  {
+    id: 'part-012',
+    avaliacaoCicloId: 'ciclo-009',
+    avaliadorId: 'colab-002',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-11-01T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  // Participantes para Feedback (ciclo-010)
+  {
+    id: 'part-013',
+    avaliacaoCicloId: 'ciclo-010',
+    avaliadorId: 'colab-001',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-01T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
+  },
+  {
+    id: 'part-014',
+    avaliacaoCicloId: 'ciclo-010',
+    avaliadorId: 'colab-002',
+    avaliadoId: 'colab-003',
+    status: 'PENDENTE',
+    criadaEm: '2024-10-01T00:00:00Z',
+    atualizadaEm: '2024-10-01T00:00:00Z'
+  },
+  // Participantes para Pesquisa (ciclo-006)
+  {
+    id: 'part-015',
+    avaliacaoCicloId: 'ciclo-006',
+    avaliadorId: 'colab-001',
+    avaliadoId: 'colab-001',
+    status: 'PENDENTE',
+    criadaEm: '2024-11-01T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  {
+    id: 'part-016',
+    avaliacaoCicloId: 'ciclo-006',
+    avaliadorId: 'colab-002',
+    avaliadoId: 'colab-002',
+    status: 'PENDENTE',
+    criadaEm: '2024-11-01T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  {
+    id: 'part-017',
+    avaliacaoCicloId: 'ciclo-006',
+    avaliadorId: 'colab-003',
+    avaliadoId: 'colab-003',
+    status: 'PENDENTE',
+    criadaEm: '2024-11-01T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
+  },
+  {
+    id: 'part-018',
+    avaliacaoCicloId: 'ciclo-006',
+    avaliadorId: 'colab-004',
+    avaliadoId: 'colab-004',
+    status: 'PENDENTE',
+    criadaEm: '2024-11-01T00:00:00Z',
+    atualizadaEm: '2024-11-01T00:00:00Z'
   }
 ];
 

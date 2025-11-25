@@ -13,10 +13,12 @@ import {
   UserMinus,
   LogOut,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Cog
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
+import Logo from '../Common/Logo';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -25,7 +27,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
-  const { usuario, logout } = useAuthStore();
+  const { usuario, logout, empresa } = useAuthStore();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
   const menuItems = [
@@ -82,6 +84,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { title: 'Equipes', path: '/parametrizacao/equipes' },
         { title: 'Usuários', path: '/parametrizacao/usuarios' }
       ]
+    },
+    {
+      title: 'Configurações',
+      icon: Cog,
+      path: '/configuracoes',
+      roles: ['ADMIN'],
+      submenu: [
+        { title: 'Empresa', path: '/configuracoes/empresa' }
+      ]
     }
   ];
 
@@ -119,15 +130,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         "lg:translate-x-0 lg:relative lg:z-auto lg:shadow-none"
       )}>
         <div className="flex flex-col h-full">
-          {/* Header */}
+          {/* Header - Logo e Nome da Empresa */}
           <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">RH System</h2>
-                <p className="text-sm text-gray-500">{usuario?.perfil}</p>
+            <div className="flex items-center space-x-3 mb-3">
+              {empresa?.logo ? (
+                <img 
+                  src={empresa.logo} 
+                  alt={`${empresa.nome} logo`}
+                  className="w-10 h-10 rounded-lg object-cover border border-gray-200"
+                />
+              ) : (
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                  <Building2 className="w-6 h-6 text-white" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-semibold text-gray-900 truncate">
+                  {empresa?.nome || 'Empresa'}
+                </h2>
+                <p className="text-xs text-gray-500 truncate">
+                  {usuario?.perfil}
+                </p>
               </div>
             </div>
           </div>
@@ -223,11 +246,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             
             <button
               onClick={handleLogout}
-              className="flex items-center justify-center space-x-2 w-full px-3 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg transition-colors border border-red-200"
+              className="flex items-center justify-center space-x-2 w-full px-3 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg transition-colors border border-red-200 mb-3"
             >
               <LogOut className="w-4 h-4" />
               <span>Sair</span>
             </button>
+            
+            {/* SinclaRH no rodapé */}
+            <div className="pt-3 border-t border-gray-200">
+              <div className="flex items-center justify-center space-x-2">
+                <Logo size="sm" showText={false} />
+                <span className="text-xs font-medium text-gray-600">SinclaRH</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

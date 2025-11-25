@@ -1,57 +1,69 @@
-# React + TypeScript + Vite
+# SinclaRH
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistema de Gestão de Desempenho e Avaliações
 
-Currently, two official plugins are available:
+## Sobre
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+SinclaRH é uma plataforma completa para gestão de desempenho, avaliações e desenvolvimento de colaboradores. O sistema permite criar e gerenciar diferentes tipos de avaliações, acompanhar o desempenho de equipes e gerar relatórios detalhados.
 
-## Expanding the ESLint configuration
+## Tecnologias
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **React 18** - Biblioteca JavaScript para construção de interfaces
+- **TypeScript** - Superset do JavaScript com tipagem estática
+- **Vite** - Build tool e dev server
+- **Tailwind CSS** - Framework CSS utilitário
+- **Zustand** - Gerenciamento de estado
+- **React Router** - Roteamento
+- **Lucide React** - Ícones
+- **Sonner** - Notificações toast
+- **Recharts** - Gráficos e visualizações
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## Funcionalidades
+
+### Tipos de Avaliação
+- **Avaliação de Desempenho** - Avaliação completa 90°, 180° ou 360°
+- **Avaliação Direcionada** - Focada em competências específicas
+- **Onboarding** - Avaliação de integração de novos colaboradores
+- **Offboarding** - Feedback de colaboradores em desligamento
+- **Feedback** - Feedback contínuo
+- **Pesquisa** - Pesquisas de clima e engajamento
+
+### Módulos
+- Dashboard com visão geral e estatísticas
+- Criação e gerenciamento de avaliações
+- Resposta e acompanhamento de avaliações
+- Gestão de equipes e colaboradores
+- Parametrização completa (competências, escalas, cargos, etc.)
+- Relatórios e análises
+
+## Instalação
+
+```bash
+# Instalar dependências
+npm install
+
+# Executar em modo desenvolvimento
+npm run dev
+
+# Build para produção
+npm run build
+
+# Preview da build
+npm run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Estrutura do Projeto
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config({
-  extends: [
-    // other configs...
-    // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
-    // Enable lint rules for React DOM
-    reactDom.configs.recommended,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
 ```
+src/
+├── components/      # Componentes reutilizáveis
+├── pages/          # Páginas da aplicação
+├── stores/         # Gerenciamento de estado (Zustand)
+├── types/          # Definições TypeScript
+├── data/           # Dados mock
+└── lib/            # Utilitários
+```
+
+## Licença
+
+© 2024 SinclaRH. Todos os direitos reservados.

@@ -6,6 +6,7 @@ interface AuthStore extends AuthState {
   login: (loginInput: string, senha: string) => Promise<boolean>;
   logout: () => void;
   initialize: () => void;
+  updateEmpresa: (empresa: Empresa) => void;
 }
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
@@ -90,5 +91,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         isLoading: false
       });
     }
+  },
+
+  updateEmpresa: (empresa: Empresa) => {
+    set({ empresa });
+    localStorage.setItem('currentEmpresa', JSON.stringify(empresa));
+    
+    // Atualizar também no localStorage de empresas
+    const empresas = JSON.parse(localStorage.getItem('empresa') || '{}');
+    localStorage.setItem('empresa', JSON.stringify(empresa));
   }
 }));

@@ -32,6 +32,9 @@ import RelatorioDesempenho from './pages/Relatorios/RelatorioDesempenho';
 import RelatorioClima from './pages/Relatorios/RelatorioClima';
 import RelatorioOffboarding from './pages/Relatorios/RelatorioOffboarding';
 
+// Páginas de Configurações
+import ConfiguracoesEmpresa from './pages/Configuracoes/ConfiguracoesEmpresa';
+
 const App: React.FC = () => {
   const { usuario, initialize: initializeAuth } = useAuthStore();
   const { initialize } = useDataStore();
@@ -78,6 +81,7 @@ const App: React.FC = () => {
                 <Route path="parametrizacao/equipes" element={<Equipes />} />
                 <Route path="parametrizacao/usuarios" element={<Usuarios />} />
                 <Route path="parametrizacao/ciclos-avaliacao" element={<CiclosAvaliacao />} />
+                <Route path="configuracoes/empresa" element={<ConfiguracoesEmpresa />} />
               </>
             )}
             

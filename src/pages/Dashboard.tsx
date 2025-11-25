@@ -36,7 +36,7 @@ const Dashboard: React.FC = () => {
           Qual avaliação deseja criar hoje?
         </p>
         <Link
-          to="/avaliacoes/criar"
+          to="/avaliacoes/criar-wizard"
           className="inline-flex items-center px-6 py-3 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium shadow-md"
         >
           <Plus className="w-5 h-5 mr-2" />
@@ -101,7 +101,7 @@ const Dashboard: React.FC = () => {
           <h3 className="text-xl font-semibold text-gray-900 mb-6">Ações Rápidas</h3>
           <div className="space-y-4">
             <Link
-              to="/avaliacoes/criar"
+              to="/avaliacoes/criar-wizard"
               className="flex items-center p-4 rounded-xl border border-gray-200 hover:bg-blue-50 hover:border-blue-200 transition-all group"
             >
               <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">

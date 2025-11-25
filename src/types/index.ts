@@ -26,6 +26,16 @@ export interface Empresa {
   atualizadaEm: string;
 }
 
+export interface Filial {
+  id: string;
+  codigo: string;
+  nome: string;
+  empresaId: string;
+  ativa: boolean;
+  criadaEm: string;
+  atualizadaEm: string;
+}
+
 export interface Cargo {
   id: string;
   codigo: string;
@@ -51,6 +61,7 @@ export interface Colaborador {
   cargo?: Cargo;
   equipeId: string; // New field for team assignment
   setor: string; // New field for department/area
+  filialId?: string; // New field for branch/filial assignment
   gestor: boolean;
   isGestor: boolean; // Alias for gestor for compatibility
   gestorId?: string; // For referencing manager
@@ -83,17 +94,28 @@ export interface TipoCompetencia {
   atualizadoEm: string;
 }
 
+export interface NotaEscala {
+  id: string;
+  nota: string; // Nome da nota (ex: "Insuficiente", "Adequado", "Bom")
+  peso: number; // Peso da nota (ex: 1, 2, 3)
+  escalaId: string;
+  criadaEm: string;
+  atualizadaEm: string;
+}
+
 export interface EscalaCompetencia {
   id: string;
   codigo: string; // New field for scale code
   tipo: 'AVALIACAO_DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' | 'FEEDBACK' | 'PESQUISA'; // New field for scale type
   nome: string;
-  peso: number;
-  descricao: string;
+  notas: NotaEscala[]; // Lista de notas da escala
   empresaId: string;
   ativa: boolean;
   criadaEm: string;
   atualizadaEm: string;
+  // Campos legados para compatibilidade (deprecated)
+  peso?: number;
+  descricao?: string;
 }
 
 export interface Competencia {

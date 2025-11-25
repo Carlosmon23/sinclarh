@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Building2, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { toast } from 'sonner';
+import Logo from '../components/Common/Logo';
 
 const Login: React.FC = () => {
   const [loginInput, setLoginInput] = useState('');
@@ -59,14 +60,14 @@ const Login: React.FC = () => {
       <div className="max-w-md w-full space-y-8">
         {/* Logo e Título */}
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Building2 className="h-8 w-8 text-white" />
+          <div className="flex justify-center">
+            <Logo size="lg" showText={false} />
           </div>
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            Sistema de RH
+            SinclaRH
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Gestão de Desempenho e Avaliações
+            Sistema de Gestão de Desempenho e Avaliações
           </p>
         </div>
 
@@ -178,7 +179,7 @@ const Login: React.FC = () => {
 
         {/* Footer */}
         <div className="text-center text-sm text-gray-500">
-          <p>&copy; 2024 Sistema de RH. Todos os direitos reservados.</p>
+          <p>&copy; 2024 SinclaRH. Todos os direitos reservados.</p>
         </div>
       </div>
     </div>

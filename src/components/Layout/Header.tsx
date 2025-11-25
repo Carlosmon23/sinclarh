@@ -20,24 +20,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           >
             <Menu className="w-6 h-6" />
           </button>
-          
-          <div className="hidden lg:block">
-            <div className="flex items-center space-x-3">
-              {empresa?.logo && (
-                <img 
-                  src={empresa.logo} 
-                  alt={`${empresa.nome} logo`}
-                  className="w-8 h-8 rounded-lg object-cover"
-                />
-              )}
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">
-                  Sistema de Gestão de Desempenho
-                </h1>
-                <p className="text-sm text-gray-500">{empresa?.nome}</p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Center - Search */}

@@ -10,15 +10,18 @@ import {
   AvaliacaoParticipante,
   RespostaAvaliacao,
   Usuario,
-  CicloAvaliacao
+  CicloAvaliacao,
+  Filial,
+  Empresa
 } from '../types';
-import { mockAvaliacoesCiclo } from '../data/mockData';
+import { mockAvaliacoesCiclo, mockFiliais } from '../data/mockData';
 
 interface DataStore {
   // Estados
   cargos: Cargo[];
   colaboradores: Colaborador[];
   equipes: Equipe[];
+  filiais: Filial[];
   tiposCompetencia: TipoCompetencia[];
   escalasCompetencia: EscalaCompetencia[];
   competencias: Competencia[];
@@ -54,6 +57,15 @@ interface DataStore {
   deleteEquipe: (id: string) => void;
   getEquipesByEquipeSuperior: (equipeSuperiorId: string) => Equipe[];
   validateEquipeHierarchy: (equipeId: string, equipeSuperiorId?: string) => boolean;
+  
+  // Actions para Filiais
+  loadFiliais: () => void;
+  addFilial: (filial: Omit<Filial, 'id' | 'criadaEm' | 'atualizadaEm'>) => void;
+  updateFilial: (id: string, filial: Partial<Filial>) => void;
+  deleteFilial: (id: string) => void;
+  
+  // Actions para Empresa
+  updateEmpresa: (id: string, empresa: Partial<Empresa>) => void;
   
   // Actions para Tipos de Competência
   loadTiposCompetencia: () => void;
@@ -114,6 +126,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
   cargos: [],
   colaboradores: [],
   equipes: [],
+  filiais: [],
   tiposCompetencia: [],
   escalasCompetencia: [],
   competencias: [],
@@ -327,6 +340,46 @@ export const useDataStore = create<DataStore>((set, get) => ({
     return true;
   },
 
+  // Filiais
+  loadFiliais: () => {
+    const saved = localStorage.getItem('filiais');
+    if (saved) {
+      set({ filiais: JSON.parse(saved) });
+    } else {
+      set({ filiais: mockFiliais });
+      localStorage.setItem('filiais', JSON.stringify(mockFiliais));
+    }
+  },
+
+  addFilial: (filialData) => {
+    const filial: Filial = {
+      ...filialData,
+      id: generateId(),
+      criadaEm: getCurrentTimestamp(),
+      atualizadaEm: getCurrentTimestamp()
+    };
+    
+    const newFiliais = [...get().filiais, filial];
+    set({ filiais: newFiliais });
+    localStorage.setItem('filiais', JSON.stringify(newFiliais));
+  },
+
+  updateFilial: (id, filialData) => {
+    const newFiliais = get().filiais.map(filial =>
+      filial.id === id 
+        ? { ...filial, ...filialData, atualizadaEm: getCurrentTimestamp() }
+        : filial
+    );
+    set({ filiais: newFiliais });
+    localStorage.setItem('filiais', JSON.stringify(newFiliais));
+  },
+
+  deleteFilial: (id) => {
+    const newFiliais = get().filiais.filter(filial => filial.id !== id);
+    set({ filiais: newFiliais });
+    localStorage.setItem('filiais', JSON.stringify(newFiliais));
+  },
+
   // Tipos de Competência
   loadTiposCompetencia: () => {
     const saved = localStorage.getItem('tiposCompetencia');
@@ -373,11 +426,24 @@ export const useDataStore = create<DataStore>((set, get) => ({
   },
 
   addEscalaCompetencia: (escalaData) => {
+    const escalaId = generateId();
+    const timestamp = getCurrentTimestamp();
+    
+    // Processar notas para garantir que tenham IDs corretos
+    const notasProcessadas = (escalaData.notas || []).map(nota => ({
+      ...nota,
+      id: nota.id && !nota.id.startsWith('temp-') ? nota.id : generateId(),
+      escalaId: escalaId,
+      criadaEm: nota.criadaEm || timestamp,
+      atualizadaEm: timestamp
+    }));
+    
     const escala: EscalaCompetencia = {
       ...escalaData,
-      id: generateId(),
-      criadaEm: getCurrentTimestamp(),
-      atualizadaEm: getCurrentTimestamp()
+      id: escalaId,
+      notas: notasProcessadas,
+      criadaEm: timestamp,
+      atualizadaEm: timestamp
     };
     
     const newEscalas = [...get().escalasCompetencia, escala];
@@ -386,11 +452,27 @@ export const useDataStore = create<DataStore>((set, get) => ({
   },
 
   updateEscalaCompetencia: (id, escalaData) => {
-    const newEscalas = get().escalasCompetencia.map(escala => 
-      escala.id === id 
-        ? { ...escala, ...escalaData, atualizadaEm: getCurrentTimestamp() }
-        : escala
-    );
+    const timestamp = getCurrentTimestamp();
+    const newEscalas = get().escalasCompetencia.map(escala => {
+      if (escala.id === id) {
+        // Processar notas para garantir que tenham IDs corretos
+        const notasProcessadas = (escalaData.notas || escala.notas || []).map(nota => ({
+          ...nota,
+          id: nota.id && !nota.id.startsWith('temp-') ? nota.id : generateId(),
+          escalaId: id,
+          criadaEm: nota.criadaEm || timestamp,
+          atualizadaEm: timestamp
+        }));
+        
+        return {
+          ...escala,
+          ...escalaData,
+          notas: notasProcessadas,
+          atualizadaEm: timestamp
+        };
+      }
+      return escala;
+    });
     set({ escalasCompetencia: newEscalas });
     localStorage.setItem('escalasCompetencia', JSON.stringify(newEscalas));
   },
@@ -652,6 +734,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
     get().loadCargos();
     get().loadColaboradores();
     get().loadEquipes();
+    get().loadFiliais();
     get().loadTiposCompetencia();
     get().loadEscalasCompetencia();
     get().loadCompetencias();
@@ -660,5 +743,16 @@ export const useDataStore = create<DataStore>((set, get) => ({
     get().loadRespostasAvaliacao();
     get().loadUsuarios();
     console.groupEnd();
+  },
+
+  updateEmpresa: (id: string, empresaData: Partial<Empresa>) => {
+    const empresa = JSON.parse(localStorage.getItem('empresa') || '{}');
+    const empresaAtualizada = {
+      ...empresa,
+      ...empresaData,
+      id: empresa.id || id,
+      atualizadaEm: getCurrentTimestamp()
+    };
+    localStorage.setItem('empresa', JSON.stringify(empresaAtualizada));
   }
 }));

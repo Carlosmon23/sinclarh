@@ -38,7 +38,7 @@ import {
 import { toast } from 'sonner';
 import { useDataStore } from '../stores/dataStore';
 import { useAuthStore } from '../stores/authStore';
-import { EscalaCompetencia } from '../types';
+import { EscalaCompetencia, Competencia, Colaborador } from '../types';
 
 type TipoAvaliacao = 'DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' | 'FEEDBACK' | 'PESQUISA' | 'CLIMA';
 
@@ -70,7 +70,7 @@ interface FormularioAvaliacaoWizard {
   configuracoesAvancadas: {
     permitirAvaliadorVisualizarTodasCompetencias: boolean;
     exigirJustificativaNotasBaixas: boolean;
-    notaMinimaJustificativa: number;
+    notasJustificativa: number[]; // Array de pesos das notas que precisam de justificativa
     permitirAvaliadoComentarios: boolean;
     dataLembrete: string;
     mensagemLembrete: string;
@@ -102,7 +102,10 @@ interface FormularioAvaliacaoWizard {
     obrigatoria: boolean;
   }[];
   pesquisaFiltros?: {
+    tipoFiltro: 'TODOS' | 'FILIAL' | 'SETOR' | 'EQUIPE';
+    filiais: string[];
     setores: string[];
+    equipes: string[];
     cargos: string[];
     situacoes: ('ATIVO' | 'DESLIGADO')[];
   };
@@ -120,6 +123,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     competencias, 
     colaboradores, 
     equipes,
+    filiais,
     tiposCompetencia,
     escalasCompetencia,
     cargos,
@@ -148,7 +152,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMinhasEquipes, setShowMinhasEquipes] = useState(false);
-  const [secaoAtual, setSecaoAtual] = useState<1 | 2>(1); // Controla qual seção do Step 1 está visível
   
   const [formulario, setFormulario] = useState<FormularioAvaliacaoWizard>({
     tipo: 'DESEMPENHO',
@@ -171,7 +174,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     configuracoesAvancadas: {
       permitirAvaliadorVisualizarTodasCompetencias: true,
       exigirJustificativaNotasBaixas: true,
-      notaMinimaJustificativa: 3,
+      notasJustificativa: [],
       permitirAvaliadoComentarios: true,
       dataLembrete: '',
       mensagemLembrete: 'Lembre-se de completar sua avaliação'
@@ -187,11 +190,23 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     feedbackTexto: '',
     pesquisaPerguntas: [],
     pesquisaFiltros: {
+      tipoFiltro: 'TODOS',
+      filiais: [],
       setores: [],
+      equipes: [],
       cargos: [],
       situacoes: ['ATIVO']
     }
   });
+
+  // Estado para equipes selecionadas
+  const [equipesSelecionadas, setEquipesSelecionadas] = useState<string[]>([]);
+  // Estado para tipo de competência selecionado
+  const [tipoCompetenciaSelecionado, setTipoCompetenciaSelecionado] = useState<'TECNICA' | 'COMPORTAMENTAL' | ''>('');
+  // Estado para mostrar modal de competências
+  const [showCompetenciasModal, setShowCompetenciasModal] = useState(false);
+  // Estado para gestor expandido na tela de participantes
+  const [gestorExpandido, setGestorExpandido] = useState<string | null>(null);
 
   const tiposAvaliacao = [
     {
@@ -200,7 +215,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       descricao: 'Avaliação completa do desempenho do colaborador',
       icon: Target,
       color: 'bg-blue-50 border-blue-200 text-blue-700',
-      escalasRecomendadas: ['escala-001', 'escala-002']
+      escalasRecomendadas: ['escala-001']
     },
     {
       tipo: 'AVALIACAO_DIRECIONADA' as TipoAvaliacao,
@@ -208,7 +223,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       descricao: 'Avaliação focada em aspectos específicos',
       icon: FileText,
       color: 'bg-green-50 border-green-200 text-green-700',
-      escalasRecomendadas: ['escala-003', 'escala-004']
+      escalasRecomendadas: ['escala-013']
     },
     {
       tipo: 'ONBOARDING' as TipoAvaliacao,
@@ -224,7 +239,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       descricao: 'Avaliação de desligamento de colaboradores',
       icon: AlertCircle,
       color: 'bg-red-50 border-red-200 text-red-700',
-      escalasRecomendadas: ['escala-006']
+      escalasRecomendadas: ['escala-009']
     },
     {
       tipo: 'FEEDBACK' as TipoAvaliacao,
@@ -232,7 +247,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       descricao: 'Avaliação de feedback contínuo',
       icon: CheckCircle,
       color: 'bg-yellow-50 border-yellow-200 text-yellow-700',
-      escalasRecomendadas: ['escala-007']
+      escalasRecomendadas: ['escala-022']
     },
     {
       tipo: 'PESQUISA' as TipoAvaliacao,
@@ -240,7 +255,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       descricao: 'Pesquisa de clima ou satisfação',
       icon: FileText,
       color: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-      escalasRecomendadas: ['escala-008']
+      escalasRecomendadas: ['escala-017']
     }
   ];
 
@@ -283,71 +298,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     setFormulario(prev => ({ ...prev, tipo }));
   };
 
-  const validateSecao1 = (): boolean => {
-    // Validações específicas de cada tipo de avaliação
-    if (formulario.tipo === 'DESEMPENHO') {
-      if (!(formulario as any).gestorSelecionadoId) {
-        toast.error('Selecione um gestor para a avaliação');
-        return false;
-      }
-      if (!(formulario as any).tipoAvaliacaoDesempenho) {
-        toast.error('Selecione o tipo de avaliação (90°, 180° ou 360°)');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'FEEDBACK') {
-      if (!formulario.feedbackAvaliadorId) {
-        toast.error('Selecione o avaliador');
-        return false;
-      }
-      if (!formulario.feedbackAvaliadoId) {
-        toast.error('Selecione o colaborador a ser avaliado');
-        return false;
-      }
-      if (!formulario.feedbackTexto) {
-        toast.error('Escreva o texto do feedback');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'ONBOARDING') {
-      if (!formulario.onboardingDataAdmissaoInicio || !formulario.onboardingDataAdmissaoFim) {
-        toast.error('Preencha as datas de admissão');
-        return false;
-      }
-      if (!formulario.onboardingPeriodo) {
-        toast.error('Selecione o período de avaliação');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'OFFBOARDING') {
-      if (!formulario.offboardingDataDemissaoInicio || !formulario.offboardingDataDemissaoFim) {
-        toast.error('Preencha as datas de demissão');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'PESQUISA') {
-      if (!formulario.pesquisaPerguntas || formulario.pesquisaPerguntas.length === 0) {
-        toast.error('Adicione pelo menos uma pergunta à pesquisa');
-        return false;
-      }
-    }
-    
-    return true;
-  };
 
-  const handleAvancarParaSecao2 = () => {
-    if (validateSecao1()) {
-      setSecaoAtual(2);
-    }
-  };
-
-  const handleVoltarParaSecao1 = () => {
-    setSecaoAtual(1);
-  };
 
   const handleCompetenciaToggle = (competenciaId: string) => {
     setFormulario(prev => ({
@@ -437,7 +388,24 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
-        // Special validation for different evaluation types
+        // Step 1 apenas valida se um tipo foi selecionado
+        if (!formulario.tipo) {
+          toast.error('Selecione um tipo de avaliação');
+          return false;
+        }
+        return true;
+        
+      case 2:
+        // Para PESQUISA, Step 2 é Seleção de Participantes
+        if (formulario.tipo === 'PESQUISA') {
+          if (formulario.participantesConfig.pessoasSelecionadas.length === 0) {
+            toast.error('Selecione pelo menos um participante');
+            return false;
+          }
+          return true;
+        }
+        
+        // Validações específicas de cada tipo de avaliação
         if (formulario.tipo === 'ONBOARDING') {
           if (!formulario.onboardingDataAdmissaoInicio || !formulario.onboardingDataAdmissaoFim || !formulario.codigo) {
             toast.error('Preencha código e datas de admissão');
@@ -489,26 +457,27 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           }
         }
         
-        if (formulario.tipo === 'PESQUISA') {
-          if (!formulario.codigo || !formulario.nome || !formulario.dataInicio || !formulario.dataFim) {
-            toast.error('Preencha código, nome e datas da pesquisa');
-            return false;
-          }
-          
-          if (formulario.pesquisaPerguntas?.length === 0) {
-            toast.error('Adicione pelo menos uma pergunta à pesquisa');
-            return false;
-          }
-        }
         
-        // Validation for DESEMPENHO - requires manager selection
+        // Validation for DESEMPENHO - requires team selection, scale and competencies
         if (formulario.tipo === 'DESEMPENHO') {
           if (!formulario.codigo || !formulario.nome || !formulario.dataInicio) {
             toast.error('Preencha código, nome e data de início');
             return false;
           }
-          if (!(formulario as any).gestorSelecionadoId) {
-            toast.error('Selecione um gestor para a avaliação');
+          if (equipesSelecionadas.length === 0) {
+            toast.error('Selecione pelo menos uma equipe para a avaliação');
+            return false;
+          }
+          if (!formulario.escalaId) {
+            toast.error('Selecione uma escala de avaliação');
+            return false;
+          }
+          if (!tipoCompetenciaSelecionado) {
+            toast.error('Selecione o tipo de competência (Técnica ou Comportamental)');
+            return false;
+          }
+          if (formulario.competenciasSelecionadas.length === 0) {
+            toast.error('Selecione pelo menos uma competência');
             return false;
           }
         }
@@ -533,22 +502,32 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         }
         return true;
         
-      case 2:
-        if (!formulario.escalaId) {
-          toast.error('Selecione uma escala de avaliação');
-          return false;
-        }
-        if (formulario.competenciasSelecionadas.length === 0) {
-          toast.error('Selecione pelo menos uma competência');
-          return false;
-        }
-        return true;
-        
       case 3:
+        // Para PESQUISA, Step 3 é Configurações Avançadas (em desenvolvimento) - sempre permite passar
+        if (formulario.tipo === 'PESQUISA') {
+        return true;
+        }
+        
+        // Para outros tipos, Step 3 é Seleção de Participantes
         if (formulario.participantesConfig.pessoasSelecionadas.length === 0) {
           toast.error('Selecione pelo menos um participante');
           return false;
         }
+        return true;
+        
+      case 4:
+        // Configurações Avançadas - valida se justificativa está configurada corretamente
+        if (formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas) {
+          const notasSelecionadas = formulario.configuracoesAvancadas.notasJustificativa || [];
+          if (notasSelecionadas.length === 0) {
+            toast.error('Selecione pelo menos uma nota que precisa de justificativa');
+          return false;
+          }
+        }
+        return true;
+        
+      case 5:
+        // Revisão e Confirmação - sempre permite passar
         return true;
         
       default:
@@ -557,18 +536,13 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   };
 
   const handleNext = () => {
-    // Se estiver no Step 1 e na seção 1, avança para seção 2
-    if (currentStep === 1 && secaoAtual === 1) {
-      handleAvancarParaSecao2();
+    // Validação do Step 1: apenas verifica se um tipo foi selecionado
+    if (currentStep === 1) {
+      if (!formulario.tipo) {
+        toast.error('Selecione um tipo de avaliação');
       return;
     }
-    
-    // Se estiver no Step 1 e na seção 2, valida e avança para Step 2
-    if (currentStep === 1 && secaoAtual === 2) {
-      if (validateStep(currentStep)) {
         setCurrentStep(prev => Math.min(prev + 1, steps.length));
-        setSecaoAtual(1); // Reset para seção 1 quando mudar de step
-      }
       return;
     }
     
@@ -579,16 +553,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   };
 
   const handlePrevious = () => {
-    // Se estiver no Step 1 e na seção 2, volta para seção 1
-    if (currentStep === 1 && secaoAtual === 2) {
-      handleVoltarParaSecao1();
-      return;
-    }
-    
-    // Se estiver em outro step, volta para o step anterior
     if (currentStep > 1) {
       setCurrentStep(prev => Math.max(prev - 1, 1));
-      setSecaoAtual(2); // Ao voltar para Step 1, mostra seção 2
     }
   };
 
@@ -714,7 +680,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       
       // Reset form and go to first step
       setCurrentStep(1);
-      setSecaoAtual(1); // Reset para primeira seção
       setFormulario({
         tipo: 'DESEMPENHO',
         codigo: '',
@@ -746,7 +711,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         configuracoesAvancadas: {
           permitirAvaliadorVisualizarTodasCompetencias: true,
           exigirJustificativaNotasBaixas: true,
-          notaMinimaJustificativa: 3,
+          notasJustificativa: [],
           permitirAvaliadoComentarios: true,
           dataLembrete: '',
           mensagemLembrete: 'Lembre-se de completar sua avaliação'
@@ -778,24 +743,51 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   const getPessoasDisponiveis = () => {
     const tipo = formulario.participantesConfig.tipo;
     
-    // For DESEMPENHO evaluation, filter by selected manager
-    if (formulario.tipo === 'DESEMPENHO' && (formulario as any).gestorSelecionadoId) {
-      const gestorId = (formulario as any).gestorSelecionadoId;
-      return getGestorEquipe(gestorId);
+    // For DESEMPENHO evaluation, filter by selected teams
+    if (formulario.tipo === 'DESEMPENHO' && equipesSelecionadas.length > 0) {
+      const colaboradoresEquipes = equipesSelecionadas.flatMap(equipeId => 
+        (colaboradores || []).filter(c => c.equipeId === equipeId && c.situacao === 'ATIVO')
+      );
+      return colaboradoresEquipes;
     }
     
     if (formulario.tipo === 'PESQUISA') {
-      const filtros = formulario.pesquisaFiltros || { setores: [], cargos: [], situacoes: ['ATIVO'] };
+      const filtros = formulario.pesquisaFiltros || { 
+        tipoFiltro: 'TODOS',
+        filiais: [],
+        setores: [], 
+        equipes: [],
+        cargos: [], 
+        situacoes: ['ATIVO'] 
+      };
       let lista = (colaboradores || []);
+      
+      // Filtrar por situação
       if (filtros.situacoes && filtros.situacoes.length > 0) {
         lista = lista.filter(c => filtros.situacoes!.includes(c.situacao));
       }
+      
+      // Filtrar por tipo de filtro
+      if (filtros.tipoFiltro === 'FILIAL') {
+        if (filtros.filiais && filtros.filiais.length > 0) {
+          lista = lista.filter(c => c.filialId && filtros.filiais!.includes(c.filialId));
+        }
+      } else if (filtros.tipoFiltro === 'SETOR') {
       if (filtros.setores && filtros.setores.length > 0) {
         lista = lista.filter(c => filtros.setores!.includes(c.setor));
       }
+      } else if (filtros.tipoFiltro === 'EQUIPE') {
+        if (filtros.equipes && filtros.equipes.length > 0) {
+          lista = lista.filter(c => filtros.equipes!.includes(c.equipeId));
+        }
+      }
+      // Se tipoFiltro === 'TODOS', não filtra por tipo
+      
+      // Filtro adicional por cargo (opcional)
       if (filtros.cargos && filtros.cargos.length > 0) {
         lista = lista.filter(c => filtros.cargos!.includes(c.cargoId));
       }
+      
       return lista;
     }
     switch (tipo) {
@@ -813,36 +805,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   };
 
   const getEscalasRecomendadas = () => {
-    // Filter scales based on evaluation type
-    let tipoEscala: EscalaCompetencia['tipo'] | undefined;
-    
-    switch (formulario.tipo) {
-      case 'DESEMPENHO':
-        tipoEscala = 'AVALIACAO_DESEMPENHO';
-        break;
-      case 'AVALIACAO_DIRECIONADA':
-        tipoEscala = 'AVALIACAO_DIRECIONADA';
-        break;
-      case 'ONBOARDING':
-        tipoEscala = 'ONBOARDING';
-        break;
-      case 'OFFBOARDING':
-        tipoEscala = 'OFFBOARDING';
-        break;
-      case 'FEEDBACK':
-        tipoEscala = 'FEEDBACK';
-        break;
-      case 'PESQUISA':
-        tipoEscala = 'PESQUISA';
-        break;
-      default:
-        break;
-    }
-    
-    // Return only scales that match the evaluation type and are active
-    return (escalasCompetencia || []).filter(escala => 
-      escala.tipo === tipoEscala && escala.ativa
-    );
+    // Return all active scales, regardless of type
+    return (escalasCompetencia || []).filter(escala => escala.ativa);
   };
 
   // Role-based access control
@@ -902,6 +866,56 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     return (colaboradores || []).filter(c => c.gestorId === gestorId && c.situacao === 'ATIVO');
   };
 
+  // Obter competências baseadas nas equipes selecionadas e tipo de competência
+  const getCompetenciasPorEquipesETipo = (tipoOverride?: 'TECNICA' | 'COMPORTAMENTAL') => {
+    const tipoParaUsar = tipoOverride || tipoCompetenciaSelecionado;
+    if (equipesSelecionadas.length === 0 || !tipoParaUsar) return [];
+    
+    // Se "Toda a Empresa" está selecionado, usar todos os colaboradores ativos
+    let colaboradoresEquipes: Colaborador[] = [];
+    if (equipesSelecionadas.includes('TODA_EMPRESA')) {
+      colaboradoresEquipes = (colaboradores || []).filter(c => c.situacao === 'ATIVO');
+    } else {
+      // Obter todos os colaboradores das equipes selecionadas
+      colaboradoresEquipes = equipesSelecionadas.flatMap(equipeId => 
+        (colaboradores || []).filter(c => c.equipeId === equipeId && c.situacao === 'ATIVO')
+      );
+    }
+    
+    // Obter todos os cargos únicos desses colaboradores
+    const cargosIds = [...new Set(colaboradoresEquipes.map(c => c.cargoId))];
+    
+    // Obter todas as competências vinculadas a esses cargos
+    const competenciasCargos = cargosIds.flatMap(cargoId => {
+      const cargo = (cargos || []).find(c => c.id === cargoId);
+      if (!cargo || !cargo.competenciasIds) return [];
+      return cargo.competenciasIds.map(compId => 
+        (competencias || []).find(c => c.id === compId)
+      ).filter(Boolean) as Competencia[];
+    });
+    
+    // Filtrar por tipo de competência
+    const tipoComp = (tiposCompetencia || []).find(t => {
+      const nomeUpper = t.nome.toUpperCase();
+      return nomeUpper === tipoParaUsar || 
+             nomeUpper.includes(tipoParaUsar) ||
+             (tipoParaUsar === 'TECNICA' && (nomeUpper.includes('TÉCNIC') || nomeUpper.includes('TECNIC'))) ||
+             (tipoParaUsar === 'COMPORTAMENTAL' && nomeUpper.includes('COMPORTAMENT'));
+    });
+    
+    if (!tipoComp) return [];
+    
+    // Retornar competências únicas do tipo selecionado
+    const competenciasUnicas = competenciasCargos.filter(comp => 
+      comp.tipoCompetenciaId === tipoComp.id && comp.ativa !== false
+    );
+    
+    // Remover duplicatas
+    return competenciasUnicas.filter((comp, index, self) => 
+      index === self.findIndex(c => c.id === comp.id)
+    );
+  };
+
   // Auto-generate evaluation name for special types
   const gerarNomeAvaliacaoAutomatico = (tipo: TipoAvaliacao, inicio?: string, fim?: string) => {
     const format = (d?: string) => (d ? new Date(d).toLocaleDateString() : '');
@@ -923,13 +937,34 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   const escalasRecomendadas = getEscalasRecomendadas();
   const setoresDisponiveis = getSetoresDisponiveis();
 
+  // Função para obter cores baseadas no tipo de avaliação
+  const getCoresPorTipo = (tipo: TipoAvaliacao) => {
+    const tipoInfo = tiposAvaliacao.find(t => t.tipo === tipo);
+    if (!tipoInfo) return { bg: 'from-blue-50 to-indigo-50', border: 'border-blue-200', badge: 'bg-blue-600' };
+    
+    // Mapear cores baseadas no tipo
+    switch (tipo) {
+      case 'FEEDBACK':
+        return { bg: 'from-yellow-50 to-amber-50', border: 'border-yellow-200', badge: 'bg-yellow-600' };
+      case 'PESQUISA':
+        return { bg: 'from-purple-50 to-pink-50', border: 'border-purple-200', badge: 'bg-purple-600' };
+      case 'ONBOARDING':
+        return { bg: 'from-purple-50 to-pink-50', border: 'border-purple-200', badge: 'bg-purple-600' };
+      case 'OFFBOARDING':
+        return { bg: 'from-red-50 to-rose-50', border: 'border-red-200', badge: 'bg-red-600' };
+      case 'AVALIACAO_DIRECIONADA':
+        return { bg: 'from-green-50 to-emerald-50', border: 'border-green-200', badge: 'bg-green-600' };
+      case 'DESEMPENHO':
+      default:
+        return { bg: 'from-blue-50 to-indigo-50', border: 'border-blue-200', badge: 'bg-blue-600' };
+    }
+  };
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
         return (
           <div className="space-y-8">
-            {/* SEÇÃO 1: ESCOLHA DO TIPO E CONFIGURAÇÕES ESPECÍFICAS */}
-            {secaoAtual === 1 && (
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -937,7 +972,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Escolha o Tipo de Avaliação</h2>
-                  <p className="text-sm text-gray-600">Selecione o tipo e configure suas opções específicas</p>
+                  <p className="text-sm text-gray-600">Selecione o tipo de avaliação que deseja criar</p>
                 </div>
               </div>
 
@@ -978,586 +1013,387 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        );
 
-              {formulario.tipo === 'FEEDBACK' && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <h4 className="font-medium text-yellow-900 mb-3">Configuração do Feedback</h4>
-                  <p className="text-sm text-yellow-700 mb-4">
-                    Feedback independente de período, sem questionário, apenas texto de retorno do gestor para o subordinado.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-yellow-700 mb-1">
-                        {usuario?.perfil === 'ADMIN' ? 'Avaliador (Gestor) *' : 'Você (Gestor)'}
-                      </label>
-                      <select
-                        value={formulario.feedbackAvaliadorId || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, feedbackAvaliadorId: e.target.value }))}
-                        className="w-full px-3 py-2 border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                        required
-                      >
-                        <option value="">Selecione o gestor</option>
-                        {usuario?.perfil === 'ADMIN' 
-                          ? (colaboradores || []).filter(c => c.situacao === 'ATIVO' && c.isGestor).map(colaborador => (
-                              <option key={colaborador.id} value={colaborador.id}>
-                                {colaborador.nome} - {colaborador.matricula}
-                              </option>
-                            ))
-                          : (usuario?.colaboradorId ? 
-                              [(colaboradores || []).find(c => c.id === usuario.colaboradorId)].filter(Boolean).map(colaborador => (
-                                <option key={colaborador.id} value={colaborador.id}>
-                                  {colaborador.nome} - {colaborador.matricula}
-                                </option>
-                              )) : [])
-                        }
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-yellow-700 mb-1">Colaborador a ser avaliado *</label>
-                      <select
-                        value={formulario.feedbackAvaliadoId || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, feedbackAvaliadoId: e.target.value }))}
-                        className="w-full px-3 py-2 border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                        required
-                      >
-                        <option value="">Selecione o colaborador</option>
-                        {usuario?.perfil === 'ADMIN'
-                          ? (colaboradores || []).filter(c => c.situacao === 'ATIVO').map(colaborador => (
-                              <option key={colaborador.id} value={colaborador.id}>
-                                {colaborador.nome} - {colaborador.matricula}
-                              </option>
-                            ))
-                          : getGestorEquipe(usuario?.colaboradorId || '').map(colaborador => (
-                              <option key={colaborador.id} value={colaborador.id}>
-                                {colaborador.nome} - {colaborador.matricula}
-                              </option>
-                            ))
-                        }
-                      </select>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-yellow-700 mb-1">Nome do Feedback</label>
-                    <input
-                      type="text"
-                      value={formulario.nome || ''}
-                      onChange={(e) => setFormulario(prev => ({ ...prev, nome: e.target.value }))}
-                      className="w-full px-3 py-2 border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                      placeholder="Ex: Feedback Trimestral - João Silva"
-                    />
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-yellow-700 mb-1">Tipo de Feedback</label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setFormulario(prev => ({ ...prev, feedbackTipo: 'POSITIVO' }))}
-                        className={`p-3 rounded-lg border-2 text-center transition-all ${
-                          (formulario as any).feedbackTipo === 'POSITIVO'
-                            ? 'bg-green-50 border-green-500 text-green-700'
-                            : 'bg-white border-gray-300 text-gray-700 hover:border-green-300'
-                        }`}
-                      >
-                        <div className="font-medium">Positivo</div>
-                        <div className="text-xs mt-1">Reconhecimento e elogios</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormulario(prev => ({ ...prev, feedbackTipo: 'CONSTRUTIVO' }))}
-                        className={`p-3 rounded-lg border-2 text-center transition-all ${
-                          (formulario as any).feedbackTipo === 'CONSTRUTIVO'
-                            ? 'bg-orange-50 border-orange-500 text-orange-700'
-                            : 'bg-white border-gray-300 text-gray-700 hover:border-orange-300'
-                        }`}
-                      >
-                        <div className="font-medium">Construtivo</div>
-                        <div className="text-xs mt-1">Pontos de melhoria</div>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-yellow-700 mb-1">Texto do Feedback *</label>
-                    <textarea
-                      value={formulario.feedbackTexto || ''}
-                      onChange={(e) => setFormulario(prev => ({ ...prev, feedbackTexto: e.target.value }))}
-                      className="w-full px-3 py-2 border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                      rows={5}
-                      placeholder="Escreva o feedback para o colaborador..."
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-
-              {formulario.tipo === 'PESQUISA' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <h4 className="font-medium text-purple-900 mb-3">Configuração da Pesquisa</h4>
-                  <p className="text-sm text-purple-700 mb-4">
-                    Crie pesquisas personalizadas com perguntas abertas, escolhas simples ou múltiplas. Defina o público-alvo através dos filtros abaixo.
-                  </p>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-purple-700 mb-1">Nome da Pesquisa *</label>
+      case 2:
+        // Para PESQUISA, Step 2 é Seleção de Participantes
+        if (formulario.tipo === 'PESQUISA') {
+          const coresTipoPesquisa = getCoresPorTipo('PESQUISA');
+          return (
+            <div className="space-y-6">
+              <div className={`bg-gradient-to-r ${coresTipoPesquisa.bg} border-2 ${coresTipoPesquisa.border} rounded-xl p-6`}>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Seleção de Participantes</h3>
+                <p className="text-sm text-gray-600 mb-4">Filtre os colaboradores que participarão da pesquisa</p>
+                
+                {/* Filtros */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Filtrar por *</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      formulario.pesquisaFiltros?.tipoFiltro === 'TODOS' || !formulario.pesquisaFiltros?.tipoFiltro
+                        ? 'bg-purple-50 border-purple-500'
+                        : 'bg-white border-gray-300 hover:border-purple-300'
+                    }`}>
                       <input
-                        type="text"
-                        value={formulario.nome || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, nome: e.target.value }))}
-                        className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="Ex: Pesquisa de Clima Organizacional 2024"
-                        required
+                        type="radio"
+                        name="tipoFiltroParticipantes"
+                        value="TODOS"
+                        checked={formulario.pesquisaFiltros?.tipoFiltro === 'TODOS' || !formulario.pesquisaFiltros?.tipoFiltro}
+                        onChange={(e) => setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'TODOS',
+                            filiais: [],
+                            setores: [],
+                            equipes: [],
+                            cargos: [],
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                          }
+                        }))}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
                       />
-                    </div>
+                      <span className="text-sm font-medium">Todos</span>
+                    </label>
                     
-                    <div className="border border-purple-300 rounded-lg p-4 bg-white">
-                      <h5 className="font-medium text-purple-900 mb-3">Filtros de Público-Alvo</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-purple-700 mb-1">Situação dos Colaboradores</label>
-                          <div className="space-y-2">
-                            <label className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={(formulario.pesquisaFiltros?.situacoes || []).includes('ATIVO')}
-                                onChange={(e) => {
-                                  const situacoes = formulario.pesquisaFiltros?.situacoes || [];
-                                  setFormulario(prev => ({
-                                    ...prev,
-                                    pesquisaFiltros: {
-                                      ...prev.pesquisaFiltros,
-                                      situacoes: e.target.checked 
-                                        ? [...situacoes, 'ATIVO']
-                                        : situacoes.filter(s => s !== 'ATIVO'),
-                                      setores: prev.pesquisaFiltros?.setores || [],
-                                      cargos: prev.pesquisaFiltros?.cargos || []
-                                    }
-                                  }));
-                                }}
-                                className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                              />
-                              <span className="text-sm text-gray-700">Ativos</span>
-                            </label>
-                            <label className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={(formulario.pesquisaFiltros?.situacoes || []).includes('DESLIGADO')}
-                                onChange={(e) => {
-                                  const situacoes = formulario.pesquisaFiltros?.situacoes || [];
-                                  setFormulario(prev => ({
-                                    ...prev,
-                                    pesquisaFiltros: {
-                                      ...prev.pesquisaFiltros,
-                                      situacoes: e.target.checked 
-                                        ? [...situacoes, 'DESLIGADO']
-                                        : situacoes.filter(s => s !== 'DESLIGADO'),
-                                      setores: prev.pesquisaFiltros?.setores || [],
-                                      cargos: prev.pesquisaFiltros?.cargos || []
-                                    }
-                                  }));
-                                }}
-                                className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                              />
-                              <span className="text-sm text-gray-700">Desligados</span>
-                            </label>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-purple-700 mb-1">Filtrar por Setor</label>
-                          <select
-                            multiple
-                            value={formulario.pesquisaFiltros?.setores || []}
-                            onChange={(e) => {
-                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                              setFormulario(prev => ({
-                                ...prev,
-                                pesquisaFiltros: {
-                                  ...prev.pesquisaFiltros,
-                                  setores: selectedOptions,
-                                  situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
-                                  cargos: prev.pesquisaFiltros?.cargos || []
-                                }
-                              }));
-                            }}
-                            className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                            size={3}
-                          >
-                            {setoresDisponiveis.map(setor => (
-                              <option key={setor} value={setor}>{setor}</option>
-                            ))}
-                          </select>
-                          <p className="text-xs text-purple-600 mt-1">Segure Ctrl para múltipla seleção</p>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-purple-700 mb-1">Filtrar por Cargo</label>
-                          <select
-                            multiple
-                            value={formulario.pesquisaFiltros?.cargos || []}
-                            onChange={(e) => {
-                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                              setFormulario(prev => ({
-                                ...prev,
-                                pesquisaFiltros: {
-                                  ...prev.pesquisaFiltros,
-                                  cargos: selectedOptions,
-                                  situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
-                                  setores: prev.pesquisaFiltros?.setores || []
-                                }
-                              }));
-                            }}
-                            className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                            size={3}
-                          >
-                            {cargos.map(cargo => (
-                              <option key={cargo.id} value={cargo.id}>{cargo.nome}</option>
-                            ))}
-                          </select>
-                          <p className="text-xs text-purple-600 mt-1">Segure Ctrl para múltipla seleção</p>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-3 p-3 bg-purple-100 rounded-lg">
-                        <p className="text-sm text-purple-800">
-                          <strong>Colaboradores que atendem aos filtros:</strong> {getPessoasDisponiveis().length}
-                        </p>
-                      </div>
-                    </div>
+                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL'
+                        ? 'bg-purple-50 border-purple-500'
+                        : 'bg-white border-gray-300 hover:border-purple-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="tipoFiltroParticipantes"
+                        value="FILIAL"
+                        checked={formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL'}
+                        onChange={(e) => setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'FILIAL',
+                            setores: [],
+                            equipes: [],
+                            cargos: [],
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                          }
+                        }))}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm font-medium">Filial</span>
+                    </label>
                     
-                    <div>
-                      <label className="block text-sm font-medium text-purple-700 mb-1">Instruções para Participantes</label>
-                      <textarea
-                        value={formulario.instrucoes || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, instrucoes: e.target.value }))}
-                        className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        rows={3}
-                        placeholder="Instruções gerais para os participantes da pesquisa"
+                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      formulario.pesquisaFiltros?.tipoFiltro === 'SETOR'
+                        ? 'bg-purple-50 border-purple-500'
+                        : 'bg-white border-gray-300 hover:border-purple-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="tipoFiltroParticipantes"
+                        value="SETOR"
+                        checked={formulario.pesquisaFiltros?.tipoFiltro === 'SETOR'}
+                        onChange={(e) => setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'SETOR',
+                            filiais: [],
+                            equipes: [],
+                            cargos: [],
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                          }
+                        }))}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-purple-700 mb-1">Perguntas da Pesquisa</label>
-                      <div className="space-y-3">
-                        {(formulario.pesquisaPerguntas || []).map((pergunta, index) => (
-                          <div key={index} className="border border-purple-200 rounded-lg p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-purple-900">Pergunta {index + 1}</span>
-                              <button type="button" onClick={() => handleRemoverPergunta(index)} className="text-red-600 hover:text-red-800">
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <input
-                              type="text"
-                              value={pergunta.pergunta}
-                              onChange={(e) => handlePerguntaChange(index, 'pergunta', e.target.value)}
-                              className="w-full px-3 py-2 border border-purple-300 rounded mb-2"
-                              placeholder="Texto da pergunta"
-                            />
-                            <select
-                              value={pergunta.tipo}
-                              onChange={(e) => handlePerguntaChange(index, 'tipo', e.target.value)}
-                              className="w-full px-3 py-2 border border-purple-300 rounded mb-2"
-                            >
-                              <option value="TEXTO">Resposta aberta</option>
-                              <option value="ESCOLHA_UNICA">Escolha única</option>
-                              <option value="ESCOLHA_MULTIPLA">Escolha múltipla</option>
-                              <option value="ESCALA_1_5">Escala 1-5</option>
-                              <option value="SIM_NAO">Sim/Não</option>
-                            </select>
-                            {(pergunta.tipo === 'ESCOLHA_SIMPLES' || pergunta.tipo === 'ESCOLHA_MULTIPLA') && (
-                              <div className="space-y-2">
-                                <label className="text-sm font-medium text-purple-700">Opções:</label>
-                                {(pergunta.opcoes || []).map((opcao, opcaoIndex) => (
-                                  <div key={opcaoIndex} className="flex gap-2">
-                                    <input
-                                      type="text"
-                                      value={opcao}
-                                      onChange={(e) => handleOpcaoChange(index, opcaoIndex, e.target.value)}
-                                      className="flex-1 px-3 py-1 border border-purple-300 rounded text-sm"
-                                      placeholder={`Opção ${opcaoIndex + 1}`}
-                                    />
-                                    <button type="button" onClick={() => handleRemoverOpcao(index, opcaoIndex)} className="text-red-600 hover:text-red-800">
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                <button type="button" onClick={() => handleAdicionarOpcao(index)} className="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1">
-                                  <Plus className="w-4 h-4" />
-                                  Adicionar opção
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <button type="button" onClick={handleAdicionarPergunta} className="w-full py-2 border-2 border-dashed border-purple-300 rounded-lg text-purple-600 hover:border-purple-400 hover:text-purple-800 flex items-center justify-center gap-2">
-                          <Plus className="w-4 h-4" />
-                          Adicionar pergunta
-                        </button>
-                      </div>
-                    </div>
+                      <span className="text-sm font-medium">Setor</span>
+                    </label>
+                    
+                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE'
+                        ? 'bg-purple-50 border-purple-500'
+                        : 'bg-white border-gray-300 hover:border-purple-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="tipoFiltroParticipantes"
+                        value="EQUIPE"
+                        checked={formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE'}
+                        onChange={(e) => setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'EQUIPE',
+                            filiais: [],
+                            setores: [],
+                            cargos: [],
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                          }
+                        }))}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm font-medium">Equipe</span>
+                    </label>
                   </div>
                 </div>
-              )}
-
-              {formulario.tipo === 'ONBOARDING' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-medium text-green-900 mb-3">Configuração do OnBoarding</h4>
-                  <p className="text-sm text-green-700 mb-4">
-                    Selecione o período de admissão dos colaboradores que serão avaliados. O sistema buscará automaticamente todos os colaboradores admitidos neste período.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-green-700 mb-1">Data Admissão Início *</label>
-                      <input
-                        type="date"
-                        value={formulario.onboardingDataAdmissaoInicio || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, onboardingDataAdmissaoInicio: e.target.value }))}
-                        className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-green-700 mb-1">Data Admissão Fim *</label>
-                      <input
-                        type="date"
-                        value={formulario.onboardingDataAdmissaoFim || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, onboardingDataAdmissaoFim: e.target.value }))}
-                        className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-green-700 mb-1">Período de Avaliação *</label>
-                    <select
-                      value={formulario.onboardingPeriodo || '1_PERIODO'}
-                      onChange={(e) => setFormulario(prev => ({ ...prev, onboardingPeriodo: e.target.value as '1_PERIODO' | '2_PERIODO' }))}
-                      className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      required
-                    >
-                      <option value="1_PERIODO">1º Ciclo</option>
-                      <option value="2_PERIODO">2º Ciclo</option>
-                    </select>
-                  </div>
-                  {formulario.onboardingDataAdmissaoInicio && formulario.onboardingDataAdmissaoFim && (
-                    <div className="mt-4 p-3 bg-green-100 rounded-lg">
-                      <p className="text-sm text-green-800">
-                        <strong>Colaboradores encontrados:</strong> {getColaboradoresPorDataAdmissao(formulario.onboardingDataAdmissaoInicio, formulario.onboardingDataAdmissaoFim).length}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {formulario.tipo === 'OFFBOARDING' && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <h4 className="font-medium text-red-900 mb-3">Configuração do OffBoarding</h4>
-                  <p className="text-sm text-red-700 mb-4">
-                    Selecione o período de desligamento dos colaboradores que serão avaliados. O sistema buscará automaticamente todos os colaboradores desligados neste período.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-red-700 mb-1">Data Demissão Início *</label>
-                      <input
-                        type="date"
-                        value={formulario.offboardingDataDemissaoInicio || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, offboardingDataDemissaoInicio: e.target.value }))}
-                        className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-red-700 mb-1">Data Demissão Fim *</label>
-                      <input
-                        type="date"
-                        value={formulario.offboardingDataDemissaoFim || ''}
-                        onChange={(e) => setFormulario(prev => ({ ...prev, offboardingDataDemissaoFim: e.target.value }))}
-                        className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                  </div>
-                  {formulario.offboardingDataDemissaoInicio && formulario.offboardingDataDemissaoFim && (
-                    <div className="mt-4 p-3 bg-red-100 rounded-lg">
-                      <p className="text-sm text-red-800">
-                        <strong>Colaboradores encontrados:</strong> {getColaboradoresPorDataDemissao(formulario.offboardingDataDemissaoInicio, formulario.offboardingDataDemissaoFim).length}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {formulario.tipo === 'DESEMPENHO' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <h4 className="font-medium text-blue-900 mb-3">Configuração da Avaliação de Desempenho</h4>
-                  
+                
+                {/* Seleção específica baseada no filtro */}
+                {formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL' && (
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-blue-700 mb-2">Selecione o Gestor *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Filial(is)</label>
                     <select
-                      value={(formulario as any).gestorSelecionadoId || ''}
-                      onChange={(e) => setFormulario(prev => ({ 
-                        ...prev, 
-                        gestorSelecionadoId: e.target.value,
-                        participantesConfig: {
-                          ...prev.participantesConfig,
-                          pessoasSelecionadas: [] // Reset selected participants when changing manager
-                        }
-                      }))}
-                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
+                      multiple
+                      value={formulario.pesquisaFiltros?.filiais || []}
+                      onChange={(e) => {
+                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                        setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'FILIAL',
+                            filiais: selectedOptions,
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                            setores: [],
+                            equipes: [],
+                            cargos: []
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      size={3}
                     >
-                      <option value="">Selecione um gestor</option>
-                      {(colaboradores || []).filter(c => c.isGestor && c.situacao === 'ATIVO').map(gestor => (
-                        <option key={gestor.id} value={gestor.id}>
-                          {gestor.nome} - {gestor.matricula}
+                      {filiais.filter(f => f.ativa).map(filial => (
+                        <option key={filial.id} value={filial.id}>
+                          {filial.nome} ({filial.codigo})
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-blue-600 mt-1">Apenas colaboradores da equipe deste gestor aparecerão para avaliação</p>
-                    {(formulario as any).gestorSelecionadoId && (
-                      <div className="mt-2 p-2 bg-blue-100 rounded-lg">
-                        <p className="text-sm text-blue-800">
-                          <strong>Colaboradores diretos encontrados:</strong> {getGestorEquipe((formulario as any).gestorSelecionadoId).length}
-                        </p>
-                      </div>
-                    )}
+                    <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
                   </div>
-
-                  <div className="border-t border-blue-200 pt-4 mt-4">
-                    <h5 className="font-medium text-blue-900 mb-3">Tipo de Avaliação</h5>
-                    <p className="text-sm text-blue-700 mb-4">
-                      Selecione o modelo de avaliação baseado em quantos ângulos o colaborador será avaliado.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '90' }))}
-                      className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        (formulario as any).tipoAvaliacaoDesempenho === '90'
-                          ? 'bg-blue-100 border-blue-500 shadow-md'
-                          : 'bg-white border-gray-300 hover:border-blue-300'
-                      }`}
+                )}
+                
+                {formulario.pesquisaFiltros?.tipoFiltro === 'SETOR' && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Setor(es)</label>
+                    <select
+                      multiple
+                      value={formulario.pesquisaFiltros?.setores || []}
+                      onChange={(e) => {
+                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                        setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'SETOR',
+                            setores: selectedOptions,
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                            filiais: [],
+                            equipes: [],
+                            cargos: []
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      size={3}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-semibold text-blue-900">90°</h5>
-                        <div className="text-2xl">📊</div>
-                      </div>
-                      <p className="text-sm text-blue-800 font-medium mb-1">Avaliação do Gestor</p>
-                      <p className="text-xs text-blue-600">Apenas o gestor avalia o subordinado. Modelo mais simples e direto.</p>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '180' }))}
-                      className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        (formulario as any).tipoAvaliacaoDesempenho === '180'
-                          ? 'bg-blue-100 border-blue-500 shadow-md'
-                          : 'bg-white border-gray-300 hover:border-blue-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-semibold text-blue-900">180°</h5>
-                        <div className="text-2xl">📈</div>
-                      </div>
-                      <p className="text-sm text-blue-800 font-medium mb-1">Gestor + Autoavaliação</p>
-                      <p className="text-xs text-blue-600">O gestor avalia o subordinado e o colaborador faz autoavaliação.</p>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '360' }))}
-                      className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        (formulario as any).tipoAvaliacaoDesempenho === '360'
-                          ? 'bg-blue-100 border-blue-500 shadow-md'
-                          : 'bg-white border-gray-300 hover:border-blue-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-semibold text-blue-900">360°</h5>
-                        <div className="text-2xl">🎯</div>
-                      </div>
-                      <p className="text-sm text-blue-800 font-medium mb-1">Avaliação Completa</p>
-                      <p className="text-xs text-blue-600">Gestor, autoavaliação, pares, fornecedores e chefes indiretos podem avaliar.</p>
-                    </button>
+                      {setoresDisponiveis.map(setor => (
+                        <option key={setor} value={setor}>{setor}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
                   </div>
-                  
-                  {(formulario as any).tipoAvaliacaoDesempenho === '360' && (
-                    <div className="mt-4 p-3 bg-blue-100 rounded-lg">
-                      <p className="text-sm text-blue-800 font-medium mb-2">Configurações adicionais para 360°:</p>
-                      <div className="space-y-2">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formulario.participantesConfig.incluirAvaliacaoGestor}
-                            onChange={(e) => setFormulario(prev => ({
-                              ...prev,
-                              participantesConfig: {
-                                ...prev.participantesConfig,
-                                incluirAvaliacaoGestor: e.target.checked
-                              }
-                            }))}
-                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-blue-800">Incluir avaliação do gestor direto</span>
-                        </label>
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formulario.participantesConfig.incluirAutoAvaliacao}
-                            onChange={(e) => setFormulario(prev => ({
-                              ...prev,
-                              participantesConfig: {
-                                ...prev.participantesConfig,
-                                incluirAutoAvaliacao: e.target.checked
-                              }
-                            }))}
-                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-blue-800">Incluir autoavaliação</span>
-                        </label>
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formulario.participantesConfig.incluirAvaliacaoPares}
-                            onChange={(e) => setFormulario(prev => ({
-                              ...prev,
-                              participantesConfig: {
-                                ...prev.participantesConfig,
-                                incluirAvaliacaoPares: e.target.checked
-                              }
-                            }))}
-                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-blue-800">Incluir avaliação de pares</span>
-                        </label>
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formulario.participantesConfig.incluirAvaliacaoSubordinados}
-                            onChange={(e) => setFormulario(prev => ({
-                              ...prev,
-                              participantesConfig: {
-                                ...prev.participantesConfig,
-                                incluirAvaliacaoSubordinados: e.target.checked
-                              }
-                            }))}
-                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-blue-800">Incluir avaliação de subordinados (se gestor)</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
+                )}
+                
+                {formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE' && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Equipe(s)</label>
+                    <select
+                      multiple
+                      value={formulario.pesquisaFiltros?.equipes || []}
+                      onChange={(e) => {
+                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                        setFormulario(prev => ({
+                          ...prev,
+                          pesquisaFiltros: {
+                            ...prev.pesquisaFiltros,
+                            tipoFiltro: 'EQUIPE',
+                            equipes: selectedOptions,
+                            situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                            filiais: [],
+                            setores: [],
+                            cargos: []
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      size={3}
+                    >
+                      {equipes.filter(e => e.ativa).map(equipe => (
+                        <option key={equipe.id} value={equipe.id}>
+                          {equipe.nome} ({equipe.codigo})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
+                  </div>
+                )}
+                
+                {/* Situação dos Colaboradores */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Situação dos Colaboradores</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={(formulario.pesquisaFiltros?.situacoes || []).includes('ATIVO')}
+                        onChange={(e) => {
+                          const situacoes = formulario.pesquisaFiltros?.situacoes || [];
+                          setFormulario(prev => ({
+                            ...prev,
+                            pesquisaFiltros: {
+                              ...prev.pesquisaFiltros,
+                              tipoFiltro: prev.pesquisaFiltros?.tipoFiltro || 'TODOS',
+                              situacoes: e.target.checked 
+                                ? [...situacoes, 'ATIVO']
+                                : situacoes.filter(s => s !== 'ATIVO'),
+                              filiais: prev.pesquisaFiltros?.filiais || [],
+                              setores: prev.pesquisaFiltros?.setores || [],
+                              equipes: prev.pesquisaFiltros?.equipes || [],
+                              cargos: prev.pesquisaFiltros?.cargos || []
+                            }
+                          }));
+                        }}
+                        className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">Ativos</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={(formulario.pesquisaFiltros?.situacoes || []).includes('DESLIGADO')}
+                        onChange={(e) => {
+                          const situacoes = formulario.pesquisaFiltros?.situacoes || [];
+                          setFormulario(prev => ({
+                            ...prev,
+                            pesquisaFiltros: {
+                              ...prev.pesquisaFiltros,
+                              tipoFiltro: prev.pesquisaFiltros?.tipoFiltro || 'TODOS',
+                              situacoes: e.target.checked 
+                                ? [...situacoes, 'DESLIGADO']
+                                : situacoes.filter(s => s !== 'DESLIGADO'),
+                              filiais: prev.pesquisaFiltros?.filiais || [],
+                              setores: prev.pesquisaFiltros?.setores || [],
+                              equipes: prev.pesquisaFiltros?.equipes || [],
+                              cargos: prev.pesquisaFiltros?.cargos || []
+                            }
+                          }));
+                        }}
+                        className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">Desligados</span>
+                    </label>
                   </div>
                 </div>
-              )}
+              </div>
+              
+              {/* Lista de Participantes */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-lg font-semibold text-gray-900">Colaboradores Disponíveis</h4>
+                  <div className="text-sm text-gray-600">
+                    {pessoasDisponiveis.length} colaborador(es) encontrado(s)
+                  </div>
+                </div>
+                
+                {pessoasDisponiveis.length > 0 ? (
+                  <>
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm text-gray-600">
+                        {formulario.participantesConfig.pessoasSelecionadas.length} de {pessoasDisponiveis.length} selecionado(s)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (formulario.participantesConfig.pessoasSelecionadas.length === pessoasDisponiveis.length) {
+                            setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                pessoasSelecionadas: []
+                              }
+                            }));
+                          } else {
+                            setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                pessoasSelecionadas: pessoasDisponiveis.map(p => p.id)
+                              }
+                            }));
+                          }
+                        }}
+                        className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+                      >
+                        {formulario.participantesConfig.pessoasSelecionadas.length === pessoasDisponiveis.length 
+                          ? 'Desselecionar Todos' 
+                          : 'Selecionar Todos'}
+                      </button>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 space-y-2">
+                      {pessoasDisponiveis.map((item) => {
+                        const isSelected = formulario.participantesConfig.pessoasSelecionadas.includes(item.id);
+                        return (
+                          <label
+                            key={item.id}
+                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                              isSelected ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handlePessoaToggle(item.id)}
+                              className="mt-1 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium ${isSelected ? 'text-purple-900' : 'text-gray-900'}`}>{item.nome}</p>
+                              {(item as any).matricula !== undefined && (
+                                <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
+                                  Matrícula: {(item as any).matricula}
+                                </p>
+                              )}
+                              {(item as Colaborador).setor && (
+                                <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
+                                  Setor: {(item as Colaborador).setor}
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">Nenhum colaborador encontrado com os filtros selecionados</p>
+                  </div>
+                )}
               </div>
             </div>
-            )}
-
-            {/* SEÇÃO 2: INFORMAÇÕES GERAIS DA AVALIAÇÃO */}
-            {secaoAtual === 2 && (
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6">
+          );
+        }
+        
+        const coresTipo = getCoresPorTipo(formulario.tipo);
+        
+        return (
+          <div className="space-y-6">
+            {/* Informações Gerais com cores dinâmicas */}
+            <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6 mb-6`}>
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
+                <div className={`w-10 h-10 ${coresTipo.badge} rounded-lg flex items-center justify-center`}>
                   <span className="text-white font-bold">2</span>
                 </div>
                 <div>
@@ -1630,224 +1466,980 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 />
               </div>
             </div>
-            )}
-          </div>
-        );
 
-      case 2:
-        if (formulario.tipo === 'FEEDBACK') {
-          return (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Confirmação</h3>
-                <p className="text-gray-600">Revise as configurações do seu feedback antes de criar</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
-                  <p className="text-sm text-gray-600">Avaliador, avaliado e período</p>
+            {/* Configurações Específicas por Tipo */}
+              {formulario.tipo === 'FEEDBACK' && (
+              <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                <h4 className="font-medium text-gray-900 mb-3">Configuração do Feedback</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                    Feedback independente de período, sem questionário, apenas texto de retorno do gestor para o subordinado.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {usuario?.perfil === 'ADMIN' ? 'Avaliador (Gestor) *' : 'Você (Gestor)'}
+                      </label>
+                      <select
+                        value={formulario.feedbackAvaliadorId || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, feedbackAvaliadorId: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="">Selecione o gestor</option>
+                        {usuario?.perfil === 'ADMIN' 
+                          ? (colaboradores || []).filter(c => c.situacao === 'ATIVO' && c.isGestor).map(colaborador => (
+                              <option key={colaborador.id} value={colaborador.id}>
+                                {colaborador.nome} - {colaborador.matricula}
+                              </option>
+                            ))
+                          : (usuario?.colaboradorId ? 
+                              [(colaboradores || []).find(c => c.id === usuario.colaboradorId)].filter(Boolean).map(colaborador => (
+                                <option key={colaborador.id} value={colaborador.id}>
+                                  {colaborador.nome} - {colaborador.matricula}
+                                </option>
+                              )) : [])
+                        }
+                      </select>
+                    </div>
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Colaborador a ser avaliado *</label>
+                      <select
+                        value={formulario.feedbackAvaliadoId || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, feedbackAvaliadoId: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="">Selecione o colaborador</option>
+                        {usuario?.perfil === 'ADMIN'
+                          ? (colaboradores || []).filter(c => c.situacao === 'ATIVO').map(colaborador => (
+                              <option key={colaborador.id} value={colaborador.id}>
+                                {colaborador.nome} - {colaborador.matricula}
+                              </option>
+                            ))
+                          : getGestorEquipe(usuario?.colaboradorId || '').map(colaborador => (
+                              <option key={colaborador.id} value={colaborador.id}>
+                                {colaborador.nome} - {colaborador.matricula}
+                              </option>
+                            ))
+                        }
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Feedback</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setFormulario(prev => ({ ...prev, feedbackTipo: 'POSITIVO' }))}
+                        className={`p-3 rounded-lg border-2 text-center transition-all ${
+                          (formulario as any).feedbackTipo === 'POSITIVO'
+                            ? 'bg-green-50 border-green-500 text-green-700'
+                            : 'bg-white border-gray-300 text-gray-700 hover:border-green-300'
+                        }`}
+                      >
+                        <div className="font-medium">Positivo</div>
+                        <div className="text-xs mt-1">Reconhecimento e elogios</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormulario(prev => ({ ...prev, feedbackTipo: 'CONSTRUTIVO' }))}
+                        className={`p-3 rounded-lg border-2 text-center transition-all ${
+                          (formulario as any).feedbackTipo === 'CONSTRUTIVO'
+                            ? 'bg-orange-50 border-orange-500 text-orange-700'
+                            : 'bg-white border-gray-300 text-gray-700 hover:border-orange-300'
+                        }`}
+                      >
+                        <div className="font-medium">Construtivo</div>
+                        <div className="text-xs mt-1">Pontos de melhoria</div>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Texto do Feedback *</label>
+                    <textarea
+                      value={formulario.feedbackTexto || ''}
+                      onChange={(e) => setFormulario(prev => ({ ...prev, feedbackTexto: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                      rows={5}
+                      placeholder="Escreva o feedback para o colaborador..."
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">Feedback</h4>
-                  <p className="text-sm text-gray-600">{formulario.feedbackTexto || 'Sem texto'}</p>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div className="space-y-6">
-            <div className="text-center mb-8">
-              <Settings className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Configuração da Avaliação</h3>
-              <p className="text-gray-600">Configure a escala e as competências que serão avaliadas</p>
-            </div>
+              )}
 
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Escala de Avaliação</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {escalasRecomendadas.map((escala) => {
-                  const isSelected = formulario.escalaId === escala.id;
-                  return (
+            {(formulario.tipo === 'PESQUISA' as any) && (
+              <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                <h4 className="font-medium text-gray-900 mb-3">Configuração da Pesquisa</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                    Crie pesquisas personalizadas com perguntas abertas, escolhas simples ou múltiplas. Defina o público-alvo através dos filtros abaixo.
+                  </p>
+                  <div className="space-y-4">
+                  <div className="border border-gray-300 rounded-lg p-4 bg-white">
+                    <h5 className="font-medium text-gray-900 mb-3">Filtros de Público-Alvo</h5>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Filtro *</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          formulario.pesquisaFiltros?.tipoFiltro === 'TODOS'
+                            ? 'bg-indigo-50 border-indigo-500'
+                            : 'bg-white border-gray-300 hover:border-indigo-300'
+                        }`}>
+                      <input
+                            type="radio"
+                            name="tipoFiltro"
+                            value="TODOS"
+                            checked={formulario.pesquisaFiltros?.tipoFiltro === 'TODOS'}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'TODOS',
+                                filiais: [],
+                                setores: [],
+                                equipes: [],
+                                cargos: [],
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                              }
+                            }))}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium">Todos</span>
+                        </label>
+                        
+                        <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL'
+                            ? 'bg-indigo-50 border-indigo-500'
+                            : 'bg-white border-gray-300 hover:border-indigo-300'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="tipoFiltro"
+                            value="FILIAL"
+                            checked={formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL'}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'FILIAL',
+                                setores: [],
+                                equipes: [],
+                                cargos: [],
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                              }
+                            }))}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium">Filial</span>
+                        </label>
+                        
+                        <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          formulario.pesquisaFiltros?.tipoFiltro === 'SETOR'
+                            ? 'bg-indigo-50 border-indigo-500'
+                            : 'bg-white border-gray-300 hover:border-indigo-300'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="tipoFiltro"
+                            value="SETOR"
+                            checked={formulario.pesquisaFiltros?.tipoFiltro === 'SETOR'}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'SETOR',
+                                filiais: [],
+                                equipes: [],
+                                cargos: [],
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                              }
+                            }))}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium">Setor</span>
+                        </label>
+                        
+                        <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE'
+                            ? 'bg-indigo-50 border-indigo-500'
+                            : 'bg-white border-gray-300 hover:border-indigo-300'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="tipoFiltro"
+                            value="EQUIPE"
+                            checked={formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE'}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'EQUIPE',
+                                filiais: [],
+                                setores: [],
+                                cargos: [],
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO']
+                              }
+                            }))}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium">Equipe</span>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Situação dos Colaboradores</label>
+                          <div className="space-y-2">
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={(formulario.pesquisaFiltros?.situacoes || []).includes('ATIVO')}
+                                onChange={(e) => {
+                                  const situacoes = formulario.pesquisaFiltros?.situacoes || [];
+                                  setFormulario(prev => ({
+                                    ...prev,
+                                    pesquisaFiltros: {
+                                      ...prev.pesquisaFiltros,
+                                  tipoFiltro: prev.pesquisaFiltros?.tipoFiltro || 'TODOS',
+                                      situacoes: e.target.checked 
+                                        ? [...situacoes, 'ATIVO']
+                                        : situacoes.filter(s => s !== 'ATIVO'),
+                                  filiais: prev.pesquisaFiltros?.filiais || [],
+                                      setores: prev.pesquisaFiltros?.setores || [],
+                                  equipes: prev.pesquisaFiltros?.equipes || [],
+                                      cargos: prev.pesquisaFiltros?.cargos || []
+                                    }
+                                  }));
+                                }}
+                            className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                              />
+                              <span className="text-sm text-gray-700">Ativos</span>
+                            </label>
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={(formulario.pesquisaFiltros?.situacoes || []).includes('DESLIGADO')}
+                                onChange={(e) => {
+                                  const situacoes = formulario.pesquisaFiltros?.situacoes || [];
+                                  setFormulario(prev => ({
+                                    ...prev,
+                                    pesquisaFiltros: {
+                                      ...prev.pesquisaFiltros,
+                                  tipoFiltro: prev.pesquisaFiltros?.tipoFiltro || 'TODOS',
+                                      situacoes: e.target.checked 
+                                        ? [...situacoes, 'DESLIGADO']
+                                        : situacoes.filter(s => s !== 'DESLIGADO'),
+                                  filiais: prev.pesquisaFiltros?.filiais || [],
+                                      setores: prev.pesquisaFiltros?.setores || [],
+                                  equipes: prev.pesquisaFiltros?.equipes || [],
+                                      cargos: prev.pesquisaFiltros?.cargos || []
+                                    }
+                                  }));
+                                }}
+                            className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                              />
+                              <span className="text-sm text-gray-700">Desligados</span>
+                            </label>
+                          </div>
+                        </div>
+                        
+                    {formulario.pesquisaFiltros?.tipoFiltro === 'FILIAL' && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Filial(is)</label>
+                        <select
+                          multiple
+                          value={formulario.pesquisaFiltros?.filiais || []}
+                          onChange={(e) => {
+                            const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                            setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'FILIAL',
+                                filiais: selectedOptions,
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                                setores: [],
+                                equipes: [],
+                                cargos: []
+                              }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          size={3}
+                        >
+                          {filiais.filter(f => f.ativa).map(filial => (
+                            <option key={filial.id} value={filial.id}>
+                              {filial.nome} ({filial.codigo})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
+                      </div>
+                    )}
+                    
+                    {formulario.pesquisaFiltros?.tipoFiltro === 'SETOR' && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Setor(es)</label>
+                          <select
+                            multiple
+                            value={formulario.pesquisaFiltros?.setores || []}
+                            onChange={(e) => {
+                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                              setFormulario(prev => ({
+                                ...prev,
+                                pesquisaFiltros: {
+                                  ...prev.pesquisaFiltros,
+                                tipoFiltro: 'SETOR',
+                                  setores: selectedOptions,
+                                  situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                                filiais: [],
+                                equipes: [],
+                                cargos: []
+                                }
+                              }));
+                            }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            size={3}
+                          >
+                            {setoresDisponiveis.map(setor => (
+                              <option key={setor} value={setor}>{setor}</option>
+                            ))}
+                          </select>
+                        <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
+                        </div>
+                    )}
+                    
+                    {formulario.pesquisaFiltros?.tipoFiltro === 'EQUIPE' && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Selecione Equipe(s)</label>
+                        <select
+                          multiple
+                          value={formulario.pesquisaFiltros?.equipes || []}
+                          onChange={(e) => {
+                            const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                            setFormulario(prev => ({
+                              ...prev,
+                              pesquisaFiltros: {
+                                ...prev.pesquisaFiltros,
+                                tipoFiltro: 'EQUIPE',
+                                equipes: selectedOptions,
+                                situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                                filiais: [],
+                                setores: [],
+                                cargos: []
+                              }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          size={3}
+                        >
+                          {(equipes || []).filter(e => e.ativa).map(equipe => (
+                            <option key={equipe.id} value={equipe.id}>{equipe.nome} - {equipe.codigo}</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
+                      </div>
+                    )}
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Cargo (Opcional)</label>
+                          <select
+                            multiple
+                            value={formulario.pesquisaFiltros?.cargos || []}
+                            onChange={(e) => {
+                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                              setFormulario(prev => ({
+                                ...prev,
+                                pesquisaFiltros: {
+                                  ...prev.pesquisaFiltros,
+                              tipoFiltro: prev.pesquisaFiltros?.tipoFiltro || 'TODOS',
+                                  cargos: selectedOptions,
+                                  situacoes: prev.pesquisaFiltros?.situacoes || ['ATIVO'],
+                              filiais: prev.pesquisaFiltros?.filiais || [],
+                              setores: prev.pesquisaFiltros?.setores || [],
+                              equipes: prev.pesquisaFiltros?.equipes || []
+                                }
+                              }));
+                            }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            size={3}
+                          >
+                            {cargos.map(cargo => (
+                              <option key={cargo.id} value={cargo.id}>{cargo.nome}</option>
+                            ))}
+                          </select>
+                      <p className="text-xs text-gray-600 mt-1">Segure Ctrl para múltipla seleção</p>
+                      </div>
+                      
+                    <div className="mt-3 p-3 bg-gray-100 rounded-lg">
+                      <p className="text-sm text-gray-800">
+                          <strong>Colaboradores que atendem aos filtros:</strong> {getPessoasDisponiveis().length}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Instruções para Participantes</label>
+                      <textarea
+                        value={formulario.instrucoes || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, instrucoes: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        rows={3}
+                        placeholder="Instruções gerais para os participantes da pesquisa"
+                      />
+                    </div>
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Perguntas da Pesquisa</label>
+                      <div className="space-y-3">
+                        {(formulario.pesquisaPerguntas || []).map((pergunta, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-3 bg-white">
+                            <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-900">Pergunta {index + 1}</span>
+                              <button type="button" onClick={() => handleRemoverPergunta(index)} className="text-red-600 hover:text-red-800">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={pergunta.pergunta}
+                              onChange={(e) => handlePerguntaChange(index, 'pergunta', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded mb-2"
+                              placeholder="Texto da pergunta"
+                            />
+                            <select
+                              value={pergunta.tipo}
+                              onChange={(e) => handlePerguntaChange(index, 'tipo', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded mb-2"
+                            >
+                              <option value="TEXTO">Resposta aberta</option>
+                              <option value="ESCOLHA_UNICA">Escolha única</option>
+                              <option value="ESCOLHA_MULTIPLA">Escolha múltipla</option>
+                              <option value="ESCALA_1_5">Escala 1-5</option>
+                              <option value="SIM_NAO">Sim/Não</option>
+                            </select>
+                            {(pergunta.tipo === 'ESCOLHA_SIMPLES' || pergunta.tipo === 'ESCOLHA_MULTIPLA') && (
+                              <div className="space-y-2">
+                              <label className="text-sm font-medium text-gray-700">Opções:</label>
+                                {(pergunta.opcoes || []).map((opcao, opcaoIndex) => (
+                                  <div key={opcaoIndex} className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      value={opcao}
+                                      onChange={(e) => handleOpcaoChange(index, opcaoIndex, e.target.value)}
+                                    className="flex-1 px-3 py-1 border border-gray-300 rounded text-sm"
+                                      placeholder={`Opção ${opcaoIndex + 1}`}
+                                    />
+                                    <button type="button" onClick={() => handleRemoverOpcao(index, opcaoIndex)} className="text-red-600 hover:text-red-800">
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                              <button type="button" onClick={() => handleAdicionarOpcao(index)} className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                  <Plus className="w-4 h-4" />
+                                  Adicionar opção
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      <button type="button" onClick={handleAdicionarPergunta} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-800 flex items-center justify-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          Adicionar pergunta
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {formulario.tipo === 'ONBOARDING' && (
+              <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                <h4 className="font-medium text-gray-900 mb-3">Configuração do OnBoarding</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                    Selecione o período de admissão dos colaboradores que serão avaliados. O sistema buscará automaticamente todos os colaboradores admitidos neste período.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Admissão Início *</label>
+                      <input
+                        type="date"
+                        value={formulario.onboardingDataAdmissaoInicio || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, onboardingDataAdmissaoInicio: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Admissão Fim *</label>
+                      <input
+                        type="date"
+                        value={formulario.onboardingDataAdmissaoFim || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, onboardingDataAdmissaoFim: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Período de Avaliação *</label>
+                    <select
+                      value={formulario.onboardingPeriodo || '1_PERIODO'}
+                      onChange={(e) => setFormulario(prev => ({ ...prev, onboardingPeriodo: e.target.value as '1_PERIODO' | '2_PERIODO' }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="1_PERIODO">1º Ciclo</option>
+                      <option value="2_PERIODO">2º Ciclo</option>
+                    </select>
+                  </div>
+                  {formulario.onboardingDataAdmissaoInicio && formulario.onboardingDataAdmissaoFim && (
+                  <div className="mt-4 p-3 bg-gray-100 rounded-lg">
+                    <p className="text-sm text-gray-800">
+                        <strong>Colaboradores encontrados:</strong> {getColaboradoresPorDataAdmissao(formulario.onboardingDataAdmissaoInicio, formulario.onboardingDataAdmissaoFim).length}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {formulario.tipo === 'OFFBOARDING' && (
+              <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                <h4 className="font-medium text-gray-900 mb-3">Configuração do OffBoarding</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                    Selecione o período de desligamento dos colaboradores que serão avaliados. O sistema buscará automaticamente todos os colaboradores desligados neste período.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Demissão Início *</label>
+                      <input
+                        type="date"
+                        value={formulario.offboardingDataDemissaoInicio || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, offboardingDataDemissaoInicio: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Demissão Fim *</label>
+                      <input
+                        type="date"
+                        value={formulario.offboardingDataDemissaoFim || ''}
+                        onChange={(e) => setFormulario(prev => ({ ...prev, offboardingDataDemissaoFim: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
+                  {formulario.offboardingDataDemissaoInicio && formulario.offboardingDataDemissaoFim && (
+                  <div className="mt-4 p-3 bg-gray-100 rounded-lg">
+                    <p className="text-sm text-gray-800">
+                        <strong>Colaboradores encontrados:</strong> {getColaboradoresPorDataDemissao(formulario.offboardingDataDemissaoInicio, formulario.offboardingDataDemissaoFim).length}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {formulario.tipo === 'DESEMPENHO' && (
+              <>
+                <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                  <h4 className="font-medium text-gray-900 mb-3">Configuração da Avaliação de Desempenho</h4>
+                  
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">Selecione a(s) Equipe(s) *</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const todasEquipes = (equipes || []).filter(e => e.ativa).map(e => e.id);
+                          if (equipesSelecionadas.length === todasEquipes.length && !equipesSelecionadas.includes('TODA_EMPRESA')) {
+                            // Se todas estão selecionadas, desmarcar todas
+                            setEquipesSelecionadas([]);
+                          } else {
+                            // Selecionar todas as equipes (exceto "Toda a Empresa")
+                            setEquipesSelecionadas(todasEquipes);
+                          }
+                          setFormulario(prev => ({
+                        ...prev, 
+                        participantesConfig: {
+                          ...prev.participantesConfig,
+                              pessoasSelecionadas: []
+                            }
+                          }));
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        {equipesSelecionadas.length === (equipes || []).filter(e => e.ativa).length && !equipesSelecionadas.includes('TODA_EMPRESA')
+                          ? 'Desmarcar todas'
+                          : 'Selecionar todas'}
+                      </button>
+                    </div>
+                    <div className="border border-gray-300 rounded-lg p-4 max-h-96 overflow-y-auto bg-white">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Card para "Toda a Empresa" */}
+                        <div
+                          onClick={() => {
+                            if (equipesSelecionadas.includes('TODA_EMPRESA')) {
+                              setEquipesSelecionadas([]);
+                            } else {
+                              setEquipesSelecionadas(['TODA_EMPRESA']);
+                            }
+                            setFormulario(prev => ({
+                              ...prev, 
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                pessoasSelecionadas: []
+                              }
+                            }));
+                          }}
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                            equipesSelecionadas.includes('TODA_EMPRESA')
+                              ? 'bg-blue-50 border-blue-500 shadow-md'
+                              : 'bg-white border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={equipesSelecionadas.includes('TODA_EMPRESA')}
+                              onChange={() => {}}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-semibold text-gray-900 block">Toda a Empresa</span>
+                              <span className="text-xs text-gray-500">Incluir todos os colaboradores</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Cards para cada equipe */}
+                        {(equipes || []).filter(e => e.ativa).map(equipe => {
+                          const isSelected = equipesSelecionadas.includes(equipe.id);
+                          const gestorNome = (colaboradores || []).find(c => c.id === equipe.gestorId)?.nome || 'N/A';
+                          return (
+                            <div
+                              key={equipe.id}
+                              onClick={() => {
+                                let novasEquipes: string[];
+                                if (isSelected) {
+                                  novasEquipes = equipesSelecionadas.filter(id => id !== equipe.id);
+                                } else {
+                                  // Remove "TODA_EMPRESA" se estiver selecionado e adiciona a equipe
+                                  novasEquipes = equipesSelecionadas
+                                    .filter(id => id !== 'TODA_EMPRESA')
+                                    .concat(equipe.id);
+                                }
+                                setEquipesSelecionadas(novasEquipes);
+                                setFormulario(prev => ({
+                                  ...prev,
+                                  participantesConfig: {
+                                    ...prev.participantesConfig,
+                                    pessoasSelecionadas: []
+                                  }
+                                }));
+                              }}
+                              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-blue-50 border-blue-500 shadow-md'
+                                  : 'bg-white border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-0.5"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm font-semibold text-gray-900 block">{equipe.nome}</span>
+                                  <span className="text-xs text-gray-500 block mt-1">Código: {equipe.codigo}</span>
+                                  <span className="text-xs text-gray-500 block">Gestor: {gestorNome}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {equipesSelecionadas.length > 0 && (
+                      <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-sm text-blue-900 font-medium mb-2">
+                          Equipes selecionadas: {equipesSelecionadas.length}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {equipesSelecionadas.map(id => {
+                            if (id === 'TODA_EMPRESA') {
+                              return (
+                                <span key={id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  Toda a Empresa
+                                </span>
+                              );
+                            }
+                            const equipe = (equipes || []).find(e => e.id === id);
+                            return equipe ? (
+                              <span key={id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {equipe.nome}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-4 mt-4">
+                    <h5 className="font-medium text-gray-900 mb-3">Tipo de Avaliação</h5>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Selecione o modelo de avaliação baseado em quantos ângulos o colaborador será avaliado.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <button
-                      key={escala.id}
                       type="button"
-                      onClick={() => setFormulario(prev => ({ ...prev, escalaId: escala.id }))}
+                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '90' }))}
                       className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        isSelected
-                          ? 'bg-blue-50 border-blue-500 shadow-md'
+                        (formulario as any).tipoAvaliacaoDesempenho === '90'
+                          ? 'bg-blue-100 border-blue-500 shadow-md'
                           : 'bg-white border-gray-300 hover:border-blue-300'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-semibold text-gray-900">{escala.codigo} - {escala.nome}</h4>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          isSelected ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          Peso: {escala.peso}
-                        </span>
+                        <h5 className="font-semibold text-gray-900">90°</h5>
+                        <div className="text-2xl">📊</div>
                       </div>
-                      <p className="text-sm text-gray-600">{escala.descricao}</p>
+                      <p className="text-sm text-gray-800 font-medium mb-1">Avaliação do Gestor</p>
+                      <p className="text-xs text-gray-600">Apenas o gestor avalia o subordinado. Modelo mais simples e direto.</p>
                     </button>
-                  );
-                })}
-              </div>
-              {escalasRecomendadas.length === 0 && (
-                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm">Nenhuma escala disponível para este tipo de avaliação</p>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Competências</h3>
-              <p className="text-sm text-gray-600 mb-4">Selecione as competências que serão avaliadas</p>
-              
-              {Object.entries(competenciasAgrupadas).map(([tipoNome, comps]) => (
-                <div key={tipoNome} className="mb-6">
-                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-blue-600" />
-                    {tipoNome}
-                  </h4>
-                  <div className="space-y-2">
-                    {comps.map((competencia) => {
-                      const isSelected = formulario.competenciasSelecionadas.includes(competencia.id);
-                      return (
-                        <label
-                          key={competencia.id}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                            isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleCompetenciaToggle(competencia.id)}
-                            className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
-                              {competencia.competencia}
-                            </p>
-                            <p className={`text-xs mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                              {competencia.perguntaParaAvaliar}
-                            </p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {Object.keys(competenciasAgrupadas).length === 0 && (
-                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm">Nenhuma competência disponível</p>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-
-      case 3:
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Tipo de Participação</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { tipo: 'AUTO_AVALIACAO', nome: 'Auto Avaliação', descricao: 'Colaborador avalia seu próprio desempenho' },
-                  { tipo: 'AVALIACAO_GESTOR', nome: 'Avaliação do Gestor', descricao: 'Gestor avalia seus subordinados' },
-                  { tipo: 'AVALIACAO_360', nome: 'Avaliação 360°', descricao: 'Avaliação por múltiplas perspectivas' },
-                  { tipo: 'AVALIACAO_EQUIPE', nome: 'Avaliação de Equipe', descricao: 'Avaliação coletiva da equipe' }
-                ].map((tipo) => (
-                  <button
-                    key={tipo.tipo}
-                    type="button"
-                    onClick={() => setFormulario(prev => ({
-                      ...prev,
-                      participantesConfig: { ...prev.participantesConfig, tipo: tipo.tipo as any }
-                    }))}
-                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                      formulario.participantesConfig.tipo === tipo.tipo
-                        ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-md'
-                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <div>
-                      <h4 className="font-medium">{tipo.nome}</h4>
-                      <p className="text-sm text-gray-500 mt-1">{tipo.descricao}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Seleção de {formulario.participantesConfig.tipo === 'AVALIACAO_EQUIPE' ? 'Equipes' : 'Pessoas'}
-              </h3>
-              <div className="mb-3">
-                <span className="text-sm text-gray-600">
-                  {formulario.participantesConfig.pessoasSelecionadas.length} selecionada(s)
-                </span>
-              </div>
-
-              <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-4 space-y-2">
-                {pessoasDisponiveis.map((item) => {
-                  const isSelected = formulario.participantesConfig.pessoasSelecionadas.includes(item.id);
-                  return (
-                    <label
-                      key={item.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    
+                    <button
+                      type="button"
+                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '180' }))}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        (formulario as any).tipoAvaliacaoDesempenho === '180'
+                          ? 'bg-blue-100 border-blue-500 shadow-md'
+                          : 'bg-white border-gray-300 hover:border-blue-300'
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handlePessoaToggle(item.id)}
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>{item.nome}</p>
-                        {formulario.participantesConfig.tipo !== 'AVALIACAO_EQUIPE' && (item as any).matricula !== undefined && (
-                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>{(item as any).matricula}</p>
-                        )}
-                        {formulario.participantesConfig.tipo === 'AVALIACAO_EQUIPE' && (item as any).gestorId !== undefined && (
-                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                            Gestor: {(colaboradores || []).find(c => c.id === (item as any).gestorId)?.nome || 'N/A'}
-                          </p>
-                        )}
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="font-semibold text-gray-900">180°</h5>
+                        <div className="text-2xl">📈</div>
                       </div>
-                    </label>
-                  );
-                })}
-              </div>
+                      <p className="text-sm text-gray-800 font-medium mb-1">Gestor + Autoavaliação</p>
+                      <p className="text-xs text-gray-600">O gestor avalia o subordinado e o colaborador faz autoavaliação.</p>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setFormulario(prev => ({ ...prev, tipoAvaliacaoDesempenho: '360' }))}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        (formulario as any).tipoAvaliacaoDesempenho === '360'
+                          ? 'bg-blue-100 border-blue-500 shadow-md'
+                          : 'bg-white border-gray-300 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="font-semibold text-gray-900">360°</h5>
+                        <div className="text-2xl">🎯</div>
+                      </div>
+                      <p className="text-sm text-gray-800 font-medium mb-1">Avaliação Completa</p>
+                      <p className="text-xs text-gray-600">Gestor, autoavaliação, pares, fornecedores e chefes indiretos podem avaliar.</p>
+                    </button>
+                  </div>
+                  
+                  {(formulario as any).tipoAvaliacaoDesempenho === '360' && (
+                    <div className="mt-4 p-3 bg-gray-100 rounded-lg">
+                      <p className="text-sm text-gray-800 font-medium mb-2">Configurações adicionais para 360°:</p>
+                      <div className="space-y-2">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={formulario.participantesConfig.incluirAvaliacaoGestor}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                incluirAvaliacaoGestor: e.target.checked
+                              }
+                            }))}
+                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-800">Incluir avaliação do gestor direto</span>
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={formulario.participantesConfig.incluirAutoAvaliacao}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                incluirAutoAvaliacao: e.target.checked
+                              }
+                            }))}
+                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-800">Incluir autoavaliação</span>
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={formulario.participantesConfig.incluirAvaliacaoPares}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                incluirAvaliacaoPares: e.target.checked
+                              }
+                            }))}
+                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-800">Incluir avaliação de pares</span>
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={formulario.participantesConfig.incluirAvaliacaoSubordinados}
+                            onChange={(e) => setFormulario(prev => ({
+                              ...prev,
+                              participantesConfig: {
+                                ...prev.participantesConfig,
+                                incluirAvaliacaoSubordinados: e.target.checked
+                              }
+                            }))}
+                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-800">Incluir avaliação de subordinados (se gestor)</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  </div>
+                </div>
 
-              {pessoasDisponiveis.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm">
-                    Nenhuma {formulario.participantesConfig.tipo === 'AVALIACAO_EQUIPE' ? 'equipe' : 'pessoa'} disponível
+                {/* Seleção de Escala */}
+                <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Escala da Avaliação *</h3>
+                  <p className="text-sm text-gray-600 mb-4">Selecione a escala que será utilizada para calcular as notas de cada competência</p>
+                  <select
+                    value={formulario.escalaId || ''}
+                    onChange={(e) => setFormulario(prev => ({ ...prev, escalaId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    required
+                  >
+                    <option value="">Selecione uma escala</option>
+                    {escalasRecomendadas.map((escala) => (
+                      <option key={escala.id} value={escala.id}>
+                        {escala.codigo} - {escala.nome} {escala.descricao ? `(${escala.descricao})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {escalasRecomendadas.length === 0 && (
+                    <div className="text-center py-8 text-gray-500 bg-white rounded-lg mt-4">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-sm">Nenhuma escala disponível para este tipo de avaliação</p>
+                </div>
+                  )}
+                  {formulario.escalaId && escalasRecomendadas.find(e => e.id === formulario.escalaId) && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-sm text-blue-900">
+                        <strong>Escala selecionada:</strong> {escalasRecomendadas.find(e => e.id === formulario.escalaId)?.codigo} - {escalasRecomendadas.find(e => e.id === formulario.escalaId)?.nome}
+                      </p>
+                      {escalasRecomendadas.find(e => e.id === formulario.escalaId)?.descricao && (
+                        <p className="text-xs text-blue-700 mt-1">
+                          {escalasRecomendadas.find(e => e.id === formulario.escalaId)?.descricao}
+                        </p>
+                      )}
+            </div>
+            )}
+                </div>
+
+                {/* Seleção de Tipo de Competência */}
+                <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Tipo de Competência *</h3>
+                  <p className="text-sm text-gray-600 mb-4">Selecione o tipo de competência que será avaliada. O sistema carregará automaticamente as competências baseadas nas funções dos colaboradores das equipes selecionadas.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const novoTipo = 'TECNICA';
+                        setTipoCompetenciaSelecionado(novoTipo);
+                        // Auto-selecionar competências técnicas
+                        const competenciasTecnicas = getCompetenciasPorEquipesETipo('TECNICA');
+                        setFormulario(prev => ({
+                          ...prev,
+                          competenciasSelecionadas: competenciasTecnicas.map(c => c.id)
+                        }));
+                      }}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        tipoCompetenciaSelecionado === 'TECNICA'
+                          ? 'bg-blue-100 border-blue-500 shadow-md'
+                          : 'bg-white border-gray-300 hover:border-blue-300'
+                      }`}
+                    >
+                      <h4 className="font-semibold text-gray-900 mb-2">Técnica</h4>
+                      <p className="text-sm text-gray-600">Competências relacionadas ao conhecimento técnico e habilidades específicas do cargo</p>
+                    </button>
+                  <button
+                    type="button"
+                      onClick={() => {
+                        const novoTipo = 'COMPORTAMENTAL';
+                        setTipoCompetenciaSelecionado(novoTipo);
+                        // Auto-selecionar competências comportamentais
+                        const competenciasComportamentais = getCompetenciasPorEquipesETipo('COMPORTAMENTAL');
+                        setFormulario(prev => ({
+                      ...prev,
+                          competenciasSelecionadas: competenciasComportamentais.map(c => c.id)
+                        }));
+                      }}
+                    className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        tipoCompetenciaSelecionado === 'COMPORTAMENTAL'
+                          ? 'bg-blue-100 border-blue-500 shadow-md'
+                          : 'bg-white border-gray-300 hover:border-blue-300'
+                      }`}
+                    >
+                      <h4 className="font-semibold text-gray-900 mb-2">Comportamental</h4>
+                      <p className="text-sm text-gray-600">Competências relacionadas ao comportamento, atitudes e habilidades interpessoais</p>
+                  </button>
+                </div>
+
+                  {tipoCompetenciaSelecionado && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                <div>
+                          <h4 className="font-medium text-gray-900">Competências {tipoCompetenciaSelecionado === 'TECNICA' ? 'Técnicas' : 'Comportamentais'}</h4>
+                          <p className="text-sm text-gray-600">
+                            {getCompetenciasPorEquipesETipo().length} competência(s) encontrada(s) baseada(s) nas funções dos colaboradores
+                          </p>
+                </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCompetenciasModal(true)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Verificar Competências
+                        </button>
+                      </div>
+                      {formulario.competenciasSelecionadas.length > 0 && (
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <p className="text-sm text-gray-700">
+                            <strong>{formulario.competenciasSelecionadas.length}</strong> competência(s) selecionada(s)
                   </p>
                 </div>
               )}
             </div>
-          </div>
-        );
+                  )}
+              </div>
 
-      case 4:
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações de Avaliação</h3>
+                {/* Configurações Avançadas */}
+                <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações Avançadas</h3>
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
+                    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
+                <div>
                     <h4 className="font-medium text-gray-900">Permitir visualização de todas as competências</h4>
                     <p className="text-sm text-gray-500">Avaliadores podem ver todas as competências, não apenas as atribuídas</p>
                   </div>
@@ -1864,9 +2456,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                 </div>
-
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
+                
+                    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
+                <div>
                     <h4 className="font-medium text-gray-900">Exigir justificativa para notas baixas</h4>
                     <p className="text-sm text-gray-500">Avaliadores devem justificar notas abaixo do mínimo</p>
                   </div>
@@ -1885,84 +2477,527 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 </div>
 
                 {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && (
-                  <div className="ml-8">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nota mínima para justificativa</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="5"
-                      value={formulario.configuracoesAvancadas.notaMinimaJustificativa}
-                      onChange={(e) => setFormulario(prev => ({
-                        ...prev,
-                        configuracoesAvancadas: {
-                          ...prev.configuracoesAvancadas,
-                          notaMinimaJustificativa: parseInt(e.target.value) || 3
+                  <div className="ml-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Notas que precisam de justificativa *</label>
+                    {formulario.escalaId ? (
+                      (() => {
+                        const escalaSelecionada = (escalasCompetencia || []).find(e => e.id === formulario.escalaId);
+                        if (!escalaSelecionada || !escalaSelecionada.notas || escalaSelecionada.notas.length === 0) {
+                          return (
+                            <p className="text-sm text-gray-500">A escala selecionada não possui notas cadastradas</p>
+                          );
                         }
-                      }))}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-gray-900">Permitir comentários do avaliado</h4>
-                    <p className="text-sm text-gray-500">Avaliados podem adicionar comentários às avaliações</p>
-                  </div>
+                        // Ordenar notas por peso (menor para maior)
+                        const notasOrdenadas = [...escalaSelecionada.notas].sort((a, b) => a.peso - b.peso);
+                        const notasSelecionadas = formulario.configuracoesAvancadas.notasJustificativa || [];
+                        return (
+                          <div className="space-y-2">
+                            {notasOrdenadas.map(nota => {
+                              const isSelected = notasSelecionadas.includes(nota.peso);
+                              return (
+                                <label
+                                  key={nota.id}
+                                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
+                                >
                   <input
-                    type="checkbox"
-                    checked={formulario.configuracoesAvancadas.permitirAvaliadoComentarios}
-                    onChange={(e) => setFormulario(prev => ({
-                      ...prev,
-                      configuracoesAvancadas: {
-                        ...prev.configuracoesAvancadas,
-                        permitirAvaliadoComentarios: e.target.checked
-                      }
-                    }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      const novasNotas = e.target.checked
+                                        ? [...notasSelecionadas, nota.peso]
+                                        : notasSelecionadas.filter(p => p !== nota.peso);
+                                      setFormulario(prev => ({
+                                        ...prev,
+                                        configuracoesAvancadas: {
+                                          ...prev.configuracoesAvancadas,
+                                          notasJustificativa: novasNotas
+                                        }
+                                      }));
+                                    }}
+                                    className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-medium text-gray-900">{nota.nota}</span>
+                                    <span className="text-xs text-gray-500 ml-2">(Peso: {nota.peso})</span>
+                </div>
+                  </label>
+                              );
+                            })}
+                            {notasSelecionadas.length === 0 && (
+                              <p className="text-xs text-amber-600 mt-2">Selecione pelo menos uma nota</p>
+                  )}
+                </div>
+                        );
+                      })()
+                    ) : (
+                      <p className="text-sm text-gray-500">Selecione uma escala primeiro</p>
+                    )}
+              </div>
+                  )}
+              </div>
+            </div>
+              </>
+            )}
+          </div>
+        );
+
+      case 3:
+        // Para PESQUISA, Step 3 é Configurações Avançadas
+        if (formulario.tipo === 'PESQUISA') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Configurações Avançadas</h3>
+                <p className="text-gray-600">Esta funcionalidade está em desenvolvimento</p>
+              </div>
+              
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                <div className="max-w-md mx-auto">
+                  <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Settings className="w-10 h-10 text-gray-400" />
+                </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Em Desenvolvimento</h4>
+                  <p className="text-sm text-gray-600 mb-6">
+                    As configurações avançadas estarão disponíveis em breve. Você pode continuar com a criação da avaliação.
+                  </p>
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Esta etapa pode ser pulada</span>
+                  </div>
                 </div>
               </div>
             </div>
-
+          );
+        }
+        
+        // Para outros tipos (exceto DESEMPENHO), Step 3 é Seleção de Participantes
+        if (formulario.tipo !== 'DESEMPENHO') {
+        return (
+          <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Lembretes</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data do Lembrete</label>
-                  <input
-                    type="date"
-                    value={formulario.configuracoesAvancadas.dataLembrete}
-                    onChange={(e) => setFormulario(prev => ({
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Seleção de Participantes</h3>
+                <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-4 space-y-2">
+                  {pessoasDisponiveis.map((item) => {
+                    const isSelected = formulario.participantesConfig.pessoasSelecionadas.includes(item.id);
+                      return (
+                        <label
+                        key={item.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                          onChange={() => handlePessoaToggle(item.id)}
+                            className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>{item.nome}</p>
+                          {(item as any).matricula !== undefined && (
+                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>{(item as any).matricula}</p>
+                          )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+            </div>
+          </div>
+        );
+        }
+        
+        // Para DESEMPENHO, mostrar gestores e colaboradores por equipe
+        // Obter gestores das equipes selecionadas
+        const gestoresEquipes = equipesSelecionadas.flatMap(equipeId => {
+          if (equipeId === 'TODA_EMPRESA') {
+            return (colaboradores || []).filter(c => c.isGestor && c.situacao === 'ATIVO');
+          }
+          const equipe = (equipes || []).find(e => e.id === equipeId);
+          if (!equipe) return [];
+          const gestor = (colaboradores || []).find(c => c.id === equipe.gestorId && c.situacao === 'ATIVO');
+          return gestor ? [gestor] : [];
+        });
+        
+        // Remover duplicatas
+        const gestoresUnicos = gestoresEquipes.filter((gestor, index, self) => 
+          index === self.findIndex(g => g.id === gestor.id)
+        );
+        
+        return (
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <Users className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Seleção de Participantes</h3>
+              <p className="text-gray-600">Selecione os colaboradores que serão avaliados</p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Gestores e Colaboradores</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Clique no gestor para ver e selecionar os colaboradores de sua equipe
+              </p>
+              
+              <div className="space-y-3">
+                {gestoresUnicos.map((gestor) => {
+                  const colaboradoresGestor = (colaboradores || []).filter(
+                    c => c.gestorId === gestor.id && c.situacao === 'ATIVO'
+                  );
+                  const isExpanded = gestorExpandido === gestor.id;
+                  
+                  return (
+                    <div key={gestor.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                        onClick={() => setGestorExpandido(isExpanded ? null : gestor.id)}
+                        className="w-full p-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 flex items-center justify-between transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <User className="w-5 h-5 text-blue-600" />
+                          <div className="text-left">
+                            <p className="font-medium text-gray-900">{gestor.nome}</p>
+                            <p className="text-sm text-gray-600">{gestor.matricula} - {colaboradoresGestor.length} colaborador(es)</p>
+                    </div>
+              </div>
+                        <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </button>
+                      
+                      {isExpanded && (
+                        <div className="p-4 bg-white border-t border-gray-200">
+                          <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm text-gray-600">
+                              {colaboradoresGestor.filter(c => 
+                                formulario.participantesConfig.pessoasSelecionadas.includes(c.id)
+                              ).length} de {colaboradoresGestor.length} selecionado(s)
+                </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const todosIds = colaboradoresGestor.map(c => c.id);
+                                const todosSelecionados = todosIds.every(id => 
+                                  formulario.participantesConfig.pessoasSelecionadas.includes(id)
+                                );
+                                if (todosSelecionados) {
+                                  setFormulario(prev => ({
                       ...prev,
-                      configuracoesAvancadas: {
-                        ...prev.configuracoesAvancadas,
-                        dataLembrete: e.target.value
-                      }
-                    }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                                    participantesConfig: {
+                                      ...prev.participantesConfig,
+                                      pessoasSelecionadas: prev.participantesConfig.pessoasSelecionadas.filter(
+                                        id => !todosIds.includes(id)
+                                      )
+                                    }
+                                  }));
+                                } else {
+                                  setFormulario(prev => ({
+                                    ...prev,
+                                    participantesConfig: {
+                                      ...prev.participantesConfig,
+                                      pessoasSelecionadas: [
+                                        ...prev.participantesConfig.pessoasSelecionadas.filter(id => !todosIds.includes(id)),
+                                        ...todosIds
+                                      ]
+                                    }
+                                  }));
+                                }
+                              }}
+                              className="text-sm text-blue-600 hover:text-blue-800"
+                            >
+                              {colaboradoresGestor.every(c => 
+                                formulario.participantesConfig.pessoasSelecionadas.includes(c.id)
+                              ) ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                            </button>
+              </div>
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {colaboradoresGestor.map((colaborador) => {
+                              const isSelected = formulario.participantesConfig.pessoasSelecionadas.includes(colaborador.id);
+                  return (
+                    <label
+                                  key={colaborador.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                                    onChange={() => handlePessoaToggle(colaborador.id)}
+                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                                    <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                                      {colaborador.nome}
+                                    </p>
+                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                                      {colaborador.matricula} - {(cargos || []).find(c => c.id === colaborador.cargoId)?.nome || 'Sem cargo'}
+                          </p>
+                      </div>
+                    </label>
+                              );
+                            })}
+              </div>
+            </div>
+                      )}
+          </div>
+                  );
+                })}
+              </div>
+
+              {gestoresUnicos.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm">Nenhum gestor encontrado nas equipes selecionadas</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mensagem do Lembrete</label>
-                  <input
-                    type="text"
-                    value={formulario.configuracoesAvancadas.mensagemLembrete}
-                    onChange={(e) => setFormulario(prev => ({
-                      ...prev,
-                      configuracoesAvancadas: {
-                        ...prev.configuracoesAvancadas,
-                        mensagemLembrete: e.target.value
-                      }
-                    }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Mensagem do lembrete"
-                  />
+              )}
+            </div>
+          </div>
+        );
+
+      case 4:
+        // Para PESQUISA, Step 4 é Revisão e Confirmação
+        if (formulario.tipo === 'PESQUISA') {
+        return (
+          <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a pesquisa</p>
+                  </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    <p><strong>Data Início:</strong> {formulario.dataInicio}</p>
+                    {formulario.dataFim && <p><strong>Data Fim:</strong> {formulario.dataFim}</p>}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Perguntas:</strong> {formulario.pesquisaPerguntas?.length || 0}</p>
+                    <p><strong>Participantes:</strong> {formulario.participantesConfig.pessoasSelecionadas.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        // Para DESEMPENHO, Step 4 é Configurações Avançadas - Em desenvolvimento
+        return (
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Configurações Avançadas</h3>
+              <p className="text-gray-600">Esta funcionalidade está em desenvolvimento</p>
+                </div>
+
+            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+              <div className="max-w-md mx-auto">
+                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Settings className="w-10 h-10 text-gray-400" />
+                  </div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">Em Desenvolvimento</h4>
+                <p className="text-sm text-gray-600 mb-6">
+                  As configurações avançadas estarão disponíveis em breve. Você pode continuar com a criação da avaliação.
+                </p>
+                <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Esta etapa pode ser pulada</span>
                 </div>
               </div>
             </div>
           </div>
         );
+
+      case 5:
+        // Revisão e Confirmação para todos os tipos padrão
+        if (formulario.tipo === 'DESEMPENHO') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a avaliação</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    <p><strong>Data Início:</strong> {formulario.dataInicio}</p>
+                    {formulario.dataFim && <p><strong>Data Fim:</strong> {formulario.dataFim}</p>}
+                </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Equipes:</strong> {equipesSelecionadas.length}</p>
+                    <p><strong>Tipo de Avaliação:</strong> {(formulario as any).tipoAvaliacaoDesempenho}°</p>
+                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+        }
+        
+        // Revisão para AVALIACAO_DIRECIONADA
+        if (formulario.tipo === 'AVALIACAO_DIRECIONADA') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a avaliação direcionada</p>
+                </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    <p><strong>Data Início:</strong> {formulario.dataInicio}</p>
+                    {formulario.dataFim && <p><strong>Data Fim:</strong> {formulario.dataFim}</p>}
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                    <p><strong>Participantes:</strong> {formulario.participantesConfig.pessoasSelecionadas.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        // Revisão para ONBOARDING
+        if (formulario.tipo === 'ONBOARDING') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a avaliação de onboarding</p>
+                  </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    <p><strong>Período:</strong> {formulario.onboardingPeriodo === '1_PERIODO' ? '1º Período' : '2º Período'}</p>
+                    {formulario.onboardingDataAdmissaoInicio && (
+                      <p><strong>Data Admissão Início:</strong> {formulario.onboardingDataAdmissaoInicio}</p>
+                    )}
+                    {formulario.onboardingDataAdmissaoFim && (
+                      <p><strong>Data Admissão Fim:</strong> {formulario.onboardingDataAdmissaoFim}</p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        // Revisão para OFFBOARDING
+        if (formulario.tipo === 'OFFBOARDING') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a avaliação de offboarding</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    {formulario.offboardingDataDemissaoInicio && (
+                      <p><strong>Data Demissão Início:</strong> {formulario.offboardingDataDemissaoInicio}</p>
+                    )}
+                    {formulario.offboardingDataDemissaoFim && (
+                      <p><strong>Data Demissão Fim:</strong> {formulario.offboardingDataDemissaoFim}</p>
+                    )}
+                </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        // Revisão para FEEDBACK (Step 2)
+        if (formulario.tipo === 'FEEDBACK') {
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar o feedback</p>
+                </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    {formulario.feedbackAvaliadorId && (
+                      <p><strong>Avaliador:</strong> {(colaboradores || []).find(c => c.id === formulario.feedbackAvaliadorId)?.nome || 'N/A'}</p>
+                    )}
+                    {formulario.feedbackAvaliadoId && (
+                      <p><strong>Avaliado:</strong> {(colaboradores || []).find(c => c.id === formulario.feedbackAvaliadoId)?.nome || 'N/A'}</p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Feedback</h4>
+                  <div className="space-y-2 text-sm">
+                    {formulario.feedbackTexto && (
+                      <p className="text-gray-700 whitespace-pre-wrap">{formulario.feedbackTexto}</p>
+                    )}
+                  </div>
+              </div>
+            </div>
+          </div>
+        );
+        }
+        
+        return null;
 
       default:
         return null;
@@ -1970,8 +3005,78 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   };
 
 
+  const competenciasDisponiveis = getCompetenciasPorEquipesETipo();
+
   return (
     <div className="p-6">
+      {/* Modal de Competências */}
+      {showCompetenciasModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Competências {tipoCompetenciaSelecionado === 'TECNICA' ? 'Técnicas' : 'Comportamentais'}</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Verifique e desconsidere competências se necessário
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCompetenciasModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="space-y-3">
+                {competenciasDisponiveis.map((competencia) => {
+                  const isSelected = formulario.competenciasSelecionadas.includes(competencia.id);
+                  return (
+                    <label
+                      key={competencia.id}
+                      className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                        isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleCompetenciaToggle(competencia.id)}
+                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                          {competencia.competencia}
+                        </p>
+                        <p className={`text-xs mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                          {competencia.perguntaParaAvaliar}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              {competenciasDisponiveis.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm">Nenhuma competência encontrada</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCompetenciasModal(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Criação de Avaliações</h1>
         <p className="text-gray-600">Crie uma nova avaliação com nosso assistente passo a passo</p>
@@ -2025,11 +3130,11 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           <button
             type="button"
             onClick={handlePrevious}
-            disabled={currentStep === 1 && secaoAtual === 1}
+            disabled={currentStep === 1}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <ChevronLeft className="w-4 h-4" />
-            {currentStep === 1 && secaoAtual === 2 ? 'Voltar para Configurações' : 'Anterior'}
+            Anterior
           </button>
 
           {currentStep < steps.length ? (
@@ -2038,7 +3143,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
               onClick={handleNext}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
-              {currentStep === 1 && secaoAtual === 1 ? 'Continuar' : 'Próximo'}
+              {currentStep === 1 ? 'Continuar' : 'Próximo'}
               <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
