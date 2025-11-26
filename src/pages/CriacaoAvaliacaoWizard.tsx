@@ -3025,7 +3025,15 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Competências {tipoCompetenciaSelecionado === 'TECNICA' ? 'Técnicas' : 'Comportamentais'}</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Competências {
+                    tiposCompetenciaSelecionados.length === 2 
+                      ? 'Técnicas e Comportamentais' 
+                      : tiposCompetenciaSelecionados[0] === 'TECNICA' 
+                        ? 'Técnicas' 
+                        : 'Comportamentais'
+                  }
+                </h3>
                 <p className="text-sm text-gray-600 mt-1">
                   Verifique e desconsidere competências se necessário
                 </p>
