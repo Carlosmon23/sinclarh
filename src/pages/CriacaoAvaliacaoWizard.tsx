@@ -201,12 +201,53 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
 
   // Estado para equipes selecionadas
   const [equipesSelecionadas, setEquipesSelecionadas] = useState<string[]>([]);
-  // Estado para tipo de competência selecionado
-  const [tipoCompetenciaSelecionado, setTipoCompetenciaSelecionado] = useState<'TECNICA' | 'COMPORTAMENTAL' | ''>('');
+  // Estado para tipo de competência selecionado - agora usando array para múltipla seleção
+  const [tiposCompetenciaSelecionados, setTiposCompetenciaSelecionados] = useState<('TECNICA' | 'COMPORTAMENTAL')[]>(['TECNICA', 'COMPORTAMENTAL']);
   // Estado para mostrar modal de competências
   const [showCompetenciasModal, setShowCompetenciasModal] = useState(false);
   // Estado para gestor expandido na tela de participantes
   const [gestorExpandido, setGestorExpandido] = useState<string | null>(null);
+  
+  // Obter escalas recomendadas
+  const getEscalasRecomendadas = () => {
+    // Return all active scales, regardless of type
+    return (escalasCompetencia || []).filter(escala => escala.ativa);
+  };
+
+  // Configurar escala padrão quando o tipo de avaliação mudar
+  useEffect(() => {
+    if (formulario.tipo && escalasCompetencia && escalasCompetencia.length > 0) {
+      const escalasRecomendadas = getEscalasRecomendadas();
+      if (escalasRecomendadas.length > 0) {
+        // Buscar escala padrão (nome contém "Padrão" ou "PDR")
+        const escalaPadrao = escalasRecomendadas.find(e => 
+          e.nome.toLowerCase().includes('padrão') || 
+          e.nome.toLowerCase().includes('padrao') ||
+          e.codigo.toLowerCase().includes('pdr')
+        );
+        // Se não encontrar, usar a primeira disponível
+        const escalaDefault = escalaPadrao || escalasRecomendadas[0];
+        if (escalaDefault && !formulario.escalaId) {
+          setFormulario(prev => ({ ...prev, escalaId: escalaDefault.id }));
+        }
+      }
+    }
+  }, [formulario.tipo, escalasCompetencia]);
+  
+  // Auto-selecionar competências quando equipes ou tipos de competência mudarem
+  useEffect(() => {
+    if (equipesSelecionadas.length > 0 && tiposCompetenciaSelecionados.length > 0 && competencias && tiposCompetencia) {
+      const todasCompetencias: string[] = [];
+      tiposCompetenciaSelecionados.forEach(tipo => {
+        const competenciasTipo = getCompetenciasPorEquipesETipo(tipo);
+        todasCompetencias.push(...competenciasTipo.map(c => c.id));
+      });
+      setFormulario(prev => ({
+        ...prev,
+        competenciasSelecionadas: [...new Set(todasCompetencias)]
+      }));
+    }
+  }, [equipesSelecionadas, tiposCompetenciaSelecionados, competencias, tiposCompetencia]);
 
   const tiposAvaliacao = [
     {
@@ -287,8 +328,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       ...baseSteps,
       { number: 2, title: 'Configuração da Avaliação', icon: Settings },
       { number: 3, title: 'Participantes', icon: Users },
-      { number: 4, title: 'Configurações Avançadas', icon: FileText },
-      { number: 5, title: 'Revisão e Confirmação', icon: CheckCircle }
+      { number: 4, title: 'Revisão e Confirmação', icon: CheckCircle }
     ];
   };
   
@@ -472,8 +512,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
             toast.error('Selecione uma escala de avaliação');
             return false;
           }
-          if (!tipoCompetenciaSelecionado) {
-            toast.error('Selecione o tipo de competência (Técnica ou Comportamental)');
+          if (tiposCompetenciaSelecionados.length === 0) {
+            toast.error('Selecione pelo menos um tipo de competência (Técnica ou Comportamental)');
             return false;
           }
           if (formulario.competenciasSelecionadas.length === 0) {
@@ -517,13 +557,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         
       case 4:
         // Configurações Avançadas - valida se justificativa está configurada corretamente
-        if (formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas) {
-          const notasSelecionadas = formulario.configuracoesAvancadas.notasJustificativa || [];
-          if (notasSelecionadas.length === 0) {
-            toast.error('Selecione pelo menos uma nota que precisa de justificativa');
-          return false;
-          }
-        }
+        // Não bloquear se nenhuma opção for selecionada nas configurações
         return true;
         
       case 5:
@@ -804,11 +838,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     }
   };
 
-  const getEscalasRecomendadas = () => {
-    // Return all active scales, regardless of type
-    return (escalasCompetencia || []).filter(escala => escala.ativa);
-  };
-
   // Role-based access control
   const podeCriarTipoAvaliacao = (tipo: TipoAvaliacao): boolean => {
     if (!usuario) return false;
@@ -868,19 +897,12 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
 
   // Obter competências baseadas nas equipes selecionadas e tipo de competência
   const getCompetenciasPorEquipesETipo = (tipoOverride?: 'TECNICA' | 'COMPORTAMENTAL') => {
-    const tipoParaUsar = tipoOverride || tipoCompetenciaSelecionado;
-    if (equipesSelecionadas.length === 0 || !tipoParaUsar) return [];
+    if (equipesSelecionadas.length === 0) return [];
     
-    // Se "Toda a Empresa" está selecionado, usar todos os colaboradores ativos
-    let colaboradoresEquipes: Colaborador[] = [];
-    if (equipesSelecionadas.includes('TODA_EMPRESA')) {
-      colaboradoresEquipes = (colaboradores || []).filter(c => c.situacao === 'ATIVO');
-    } else {
-      // Obter todos os colaboradores das equipes selecionadas
-      colaboradoresEquipes = equipesSelecionadas.flatMap(equipeId => 
-        (colaboradores || []).filter(c => c.equipeId === equipeId && c.situacao === 'ATIVO')
-      );
-    }
+    // Obter todos os colaboradores das equipes selecionadas
+    const colaboradoresEquipes = equipesSelecionadas.flatMap(equipeId => 
+      (colaboradores || []).filter(c => c.equipeId === equipeId && c.situacao === 'ATIVO')
+    );
     
     // Obter todos os cargos únicos desses colaboradores
     const cargosIds = [...new Set(colaboradoresEquipes.map(c => c.cargoId))];
@@ -895,12 +917,36 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     });
     
     // Filtrar por tipo de competência
+    if (!tipoOverride) {
+      // Se não há override, retornar todas as competências dos tipos selecionados
+      const tiposComp = (tiposCompetencia || []).filter(t => {
+        const nomeUpper = t.nome.toUpperCase();
+        return tiposCompetenciaSelecionados.some(tipoSel => {
+          if (tipoSel === 'TECNICA') {
+            return nomeUpper.includes('TÉCNIC') || nomeUpper.includes('TECNIC');
+          }
+          if (tipoSel === 'COMPORTAMENTAL') {
+            return nomeUpper.includes('COMPORTAMENT');
+          }
+          return false;
+        });
+      });
+      
+      const competenciasUnicas = competenciasCargos.filter(comp => 
+        tiposComp.some(tc => tc.id === comp.tipoCompetenciaId) && comp.ativa !== false
+      );
+      
+      return competenciasUnicas.filter((comp, index, self) => 
+        index === self.findIndex(c => c.id === comp.id)
+      );
+    }
+    
     const tipoComp = (tiposCompetencia || []).find(t => {
       const nomeUpper = t.nome.toUpperCase();
-      return nomeUpper === tipoParaUsar || 
-             nomeUpper.includes(tipoParaUsar) ||
-             (tipoParaUsar === 'TECNICA' && (nomeUpper.includes('TÉCNIC') || nomeUpper.includes('TECNIC'))) ||
-             (tipoParaUsar === 'COMPORTAMENTAL' && nomeUpper.includes('COMPORTAMENT'));
+      return nomeUpper === tipoOverride || 
+             nomeUpper.includes(tipoOverride) ||
+             (tipoOverride === 'TECNICA' && (nomeUpper.includes('TÉCNIC') || nomeUpper.includes('TECNIC'))) ||
+             (tipoOverride === 'COMPORTAMENTAL' && nomeUpper.includes('COMPORTAMENT'));
     });
     
     if (!tipoComp) return [];
@@ -1359,14 +1405,24 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                             />
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm font-medium ${isSelected ? 'text-purple-900' : 'text-gray-900'}`}>{item.nome}</p>
-                              {(item as any).matricula !== undefined && (
+                              {(item as Colaborador).matricula && (
                                 <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
-                                  Matrícula: {(item as any).matricula}
+                                  Matrícula: {(item as Colaborador).matricula}
+                                </p>
+                              )}
+                              {(item as Colaborador).cargoId && (
+                                <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
+                                  Cargo: {(cargos || []).find(c => c.id === (item as Colaborador).cargoId)?.nome || 'Sem cargo'}
                                 </p>
                               )}
                               {(item as Colaborador).setor && (
                                 <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
                                   Setor: {(item as Colaborador).setor}
+                                </p>
+                              )}
+                              {(item as Colaborador).dataAdmissao && (
+                                <p className={`text-xs ${isSelected ? 'text-purple-700' : 'text-gray-500'}`}>
+                                  Data de Admissão: {new Date((item as Colaborador).dataAdmissao).toLocaleDateString('pt-BR')}
                                 </p>
                               )}
                             </div>
@@ -1445,12 +1501,23 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                   <input
                     type="date"
                     value={formulario.dataFim}
-                    onChange={(e) => setFormulario(prev => ({ ...prev, dataFim: e.target.value }))}
+                    onChange={(e) => {
+                      const dataFim = e.target.value;
+                      const hoje = new Date().toISOString().split('T')[0];
+                      if (dataFim && dataFim < hoje) {
+                        toast.error('A data de fim não pode ser menor que a data de hoje');
+                        return;
+                      }
+                      setFormulario(prev => ({ ...prev, dataFim }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required={formulario.tipo !== 'DESEMPENHO'}
                   />
                   {formulario.tipo === 'DESEMPENHO' && (
                     <p className="text-xs text-gray-500 mt-1">Opcional para avaliação de desempenho</p>
+                  )}
+                  {formulario.dataFim && new Date(formulario.dataFim) < new Date() && (
+                    <p className="text-xs text-red-600 mt-1">A data de fim não pode ser menor que a data de hoje</p>
                   )}
                 </div>
               </div>
@@ -2044,7 +2111,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
               {formulario.tipo === 'DESEMPENHO' && (
               <>
                 <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
-                  <h4 className="font-medium text-gray-900 mb-3">Configuração da Avaliação de Desempenho</h4>
+                  <h4 className="font-medium text-gray-900 mb-3">Seleção dos Avaliados</h4>
                   
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
@@ -2053,11 +2120,11 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                         type="button"
                         onClick={() => {
                           const todasEquipes = (equipes || []).filter(e => e.ativa).map(e => e.id);
-                          if (equipesSelecionadas.length === todasEquipes.length && !equipesSelecionadas.includes('TODA_EMPRESA')) {
+                          if (equipesSelecionadas.length === todasEquipes.length) {
                             // Se todas estão selecionadas, desmarcar todas
                             setEquipesSelecionadas([]);
                           } else {
-                            // Selecionar todas as equipes (exceto "Toda a Empresa")
+                            // Selecionar todas as equipes
                             setEquipesSelecionadas(todasEquipes);
                           }
                           setFormulario(prev => ({
@@ -2070,97 +2137,56 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                         }}
                         className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                       >
-                        {equipesSelecionadas.length === (equipes || []).filter(e => e.ativa).length && !equipesSelecionadas.includes('TODA_EMPRESA')
+                        {equipesSelecionadas.length === (equipes || []).filter(e => e.ativa).length
                           ? 'Desmarcar todas'
                           : 'Selecionar todas'}
                       </button>
                     </div>
                     <div className="border border-gray-300 rounded-lg p-4 max-h-96 overflow-y-auto bg-white">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Card para "Toda a Empresa" */}
-                        <div
-                          onClick={() => {
-                            if (equipesSelecionadas.includes('TODA_EMPRESA')) {
-                              setEquipesSelecionadas([]);
-                            } else {
-                              setEquipesSelecionadas(['TODA_EMPRESA']);
-                            }
-                            setFormulario(prev => ({
-                              ...prev, 
-                              participantesConfig: {
-                                ...prev.participantesConfig,
-                                pessoasSelecionadas: []
-                              }
-                            }));
-                          }}
-                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                            equipesSelecionadas.includes('TODA_EMPRESA')
-                              ? 'bg-blue-50 border-blue-500 shadow-md'
-                              : 'bg-white border-gray-300 hover:border-blue-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={equipesSelecionadas.includes('TODA_EMPRESA')}
-                              onChange={() => {}}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <div className="flex-1">
-                              <span className="text-sm font-semibold text-gray-900 block">Toda a Empresa</span>
-                              <span className="text-xs text-gray-500">Incluir todos os colaboradores</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Cards para cada equipe */}
+                      <div className="space-y-2">
+                        {/* Lista de equipes com checkboxes */}
                         {(equipes || []).filter(e => e.ativa).map(equipe => {
                           const isSelected = equipesSelecionadas.includes(equipe.id);
                           const gestorNome = (colaboradores || []).find(c => c.id === equipe.gestorId)?.nome || 'N/A';
                           return (
-                            <div
+                            <label
                               key={equipe.id}
-                              onClick={() => {
-                                let novasEquipes: string[];
-                                if (isSelected) {
-                                  novasEquipes = equipesSelecionadas.filter(id => id !== equipe.id);
-                                } else {
-                                  // Remove "TODA_EMPRESA" se estiver selecionado e adiciona a equipe
-                                  novasEquipes = equipesSelecionadas
-                                    .filter(id => id !== 'TODA_EMPRESA')
-                                    .concat(equipe.id);
-                                }
-                                setEquipesSelecionadas(novasEquipes);
-                                setFormulario(prev => ({
-                                  ...prev,
-                                  participantesConfig: {
-                                    ...prev.participantesConfig,
-                                    pessoasSelecionadas: []
-                                  }
-                                }));
-                              }}
-                              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                                 isSelected
-                                  ? 'bg-blue-50 border-blue-500 shadow-md'
-                                  : 'bg-white border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+                                  ? 'bg-blue-50 border-blue-200'
+                                  : 'bg-white border-gray-200 hover:bg-gray-50'
                               }`}
                             >
-                              <div className="flex items-start gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-0.5"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-semibold text-gray-900 block">{equipe.nome}</span>
-                                  <span className="text-xs text-gray-500 block mt-1">Código: {equipe.codigo}</span>
-                                  <span className="text-xs text-gray-500 block">Gestor: {gestorNome}</span>
-                                </div>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  let novasEquipes: string[];
+                                  if (isSelected) {
+                                    novasEquipes = equipesSelecionadas.filter(id => id !== equipe.id);
+                                  } else {
+                                    novasEquipes = [...equipesSelecionadas, equipe.id];
+                                  }
+                                  setEquipesSelecionadas(novasEquipes);
+                                  setFormulario(prev => ({
+                                    ...prev,
+                                    participantesConfig: {
+                                      ...prev.participantesConfig,
+                                      pessoasSelecionadas: []
+                                    }
+                                  }));
+                                }}
+                                className="mt-1 w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-sm font-medium block ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                                  {equipe.nome}
+                                </span>
+                                <span className={`text-xs block mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                                  Código: {equipe.codigo} | Gestor: {gestorNome}
+                                </span>
                               </div>
-                            </div>
+                            </label>
                           );
                         })}
                       </div>
@@ -2172,13 +2198,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {equipesSelecionadas.map(id => {
-                            if (id === 'TODA_EMPRESA') {
-                              return (
-                                <span key={id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  Toda a Empresa
-                                </span>
-                              );
-                            }
                             const equipe = (equipes || []).find(e => e.id === id);
                             return equipe ? (
                               <span key={id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -2360,85 +2379,69 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Tipo de Competência *</h3>
                   <p className="text-sm text-gray-600 mb-4">Selecione o tipo de competência que será avaliada. O sistema carregará automaticamente as competências baseadas nas funções dos colaboradores das equipes selecionadas.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const novoTipo = 'TECNICA';
-                        setTipoCompetenciaSelecionado(novoTipo);
-                        // Auto-selecionar competências técnicas
-                        const competenciasTecnicas = getCompetenciasPorEquipesETipo('TECNICA');
-                        setFormulario(prev => ({
-                          ...prev,
-                          competenciasSelecionadas: competenciasTecnicas.map(c => c.id)
-                        }));
-                      }}
-                      className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        tipoCompetenciaSelecionado === 'TECNICA'
-                          ? 'bg-blue-100 border-blue-500 shadow-md'
-                          : 'bg-white border-gray-300 hover:border-blue-300'
-                      }`}
-                    >
-                      <h4 className="font-semibold text-gray-900 mb-2">Técnica</h4>
-                      <p className="text-sm text-gray-600">Competências relacionadas ao conhecimento técnico e habilidades específicas do cargo</p>
-                    </button>
-                  <button
-                    type="button"
-                      onClick={() => {
-                        const novoTipo = 'COMPORTAMENTAL';
-                        setTipoCompetenciaSelecionado(novoTipo);
-                        // Auto-selecionar competências comportamentais
-                        const competenciasComportamentais = getCompetenciasPorEquipesETipo('COMPORTAMENTAL');
-                        setFormulario(prev => ({
-                      ...prev,
-                          competenciasSelecionadas: competenciasComportamentais.map(c => c.id)
-                        }));
-                      }}
-                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                        tipoCompetenciaSelecionado === 'COMPORTAMENTAL'
-                          ? 'bg-blue-100 border-blue-500 shadow-md'
-                          : 'bg-white border-gray-300 hover:border-blue-300'
-                      }`}
-                    >
-                      <h4 className="font-semibold text-gray-900 mb-2">Comportamental</h4>
-                      <p className="text-sm text-gray-600">Competências relacionadas ao comportamento, atitudes e habilidades interpessoais</p>
-                  </button>
-                </div>
-
-                  {tipoCompetenciaSelecionado && (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between mb-3">
-                <div>
-                          <h4 className="font-medium text-gray-900">Competências {tipoCompetenciaSelecionado === 'TECNICA' ? 'Técnicas' : 'Comportamentais'}</h4>
-                          <p className="text-sm text-gray-600">
-                            {getCompetenciasPorEquipesETipo().length} competência(s) encontrada(s) baseada(s) nas funções dos colaboradores
-                          </p>
-                </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowCompetenciasModal(true)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Verificar Competências
-                        </button>
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all bg-white border-gray-300 hover:border-blue-300">
+                      <input
+                        type="checkbox"
+                        checked={tiposCompetenciaSelecionados.includes('TECNICA')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTiposCompetenciaSelecionados([...tiposCompetenciaSelecionados, 'TECNICA']);
+                          } else {
+                            setTiposCompetenciaSelecionados(tiposCompetenciaSelecionados.filter(t => t !== 'TECNICA'));
+                          }
+                        }}
+                        className="mt-1 w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 mb-2">Técnica</h4>
+                        <p className="text-sm text-gray-600">Competências relacionadas ao conhecimento técnico e habilidades específicas do cargo</p>
                       </div>
-                      {formulario.competenciasSelecionadas.length > 0 && (
-                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                          <p className="text-sm text-gray-700">
-                            <strong>{formulario.competenciasSelecionadas.length}</strong> competência(s) selecionada(s)
-                  </p>
-                </div>
-              )}
-            </div>
-                  )}
-              </div>
+                    </label>
+                    <label className="flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all bg-white border-gray-300 hover:border-blue-300">
+                      <input
+                        type="checkbox"
+                        checked={tiposCompetenciaSelecionados.includes('COMPORTAMENTAL')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTiposCompetenciaSelecionados([...tiposCompetenciaSelecionados, 'COMPORTAMENTAL']);
+                          } else {
+                            setTiposCompetenciaSelecionados(tiposCompetenciaSelecionados.filter(t => t !== 'COMPORTAMENTAL'));
+                          }
+                        }}
+                        className="mt-1 w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 mb-2">Comportamental</h4>
+                        <p className="text-sm text-gray-600">Competências relacionadas ao comportamento, atitudes e habilidades interpessoais</p>
+                      </div>
+                    </label>
+                  </div>
 
-                {/* Configurações Avançadas */}
+                  {tiposCompetenciaSelecionados.length > 0 && equipesSelecionadas.length > 0 && (
+                    <div className="mt-4">
+                      <div className="mb-3">
+                        <h4 className="font-medium text-gray-900">
+                          Competências {tiposCompetenciaSelecionados.length === 2 ? 'Técnicas e Comportamentais' : tiposCompetenciaSelecionados[0] === 'TECNICA' ? 'Técnicas' : 'Comportamentais'}
+                        </h4>
+                        <p className="text-sm text-gray-600">
+                          {getCompetenciasPorEquipesETipo().length} competência(s) encontrada(s) baseada(s) nas funções dos colaboradores
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          <strong>{formulario.competenciasSelecionadas.length}</strong> competência(s) selecionada(s)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Configurações da Avaliação */}
                 <div className={`bg-gradient-to-r ${coresTipo.bg} border-2 ${coresTipo.border} rounded-xl p-6`}>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações Avançadas</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações da Avaliação</h3>
               <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
+                    {/* Mostrar opções avançadas apenas para avaliações 180º ou 360º */}
+                    {((formulario as any).tipoAvaliacaoDesempenho === '180' || (formulario as any).tipoAvaliacaoDesempenho === '360') && (
+                      <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
                 <div>
                     <h4 className="font-medium text-gray-900">Permitir visualização de todas as competências</h4>
                     <p className="text-sm text-gray-500">Avaliadores podem ver todas as competências, não apenas as atribuídas</p>
@@ -2456,11 +2459,12 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                 </div>
+                    )}
                 
                     <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
                 <div>
-                    <h4 className="font-medium text-gray-900">Exigir justificativa para notas baixas</h4>
-                    <p className="text-sm text-gray-500">Avaliadores devem justificar notas abaixo do mínimo</p>
+                    <h4 className="font-medium text-gray-900">Exigir justificativa para notas</h4>
+                    <p className="text-sm text-gray-500">Avaliadores devem justificar as notas selecionadas</p>
                   </div>
                   <input
                     type="checkbox"
@@ -2478,7 +2482,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
 
                 {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && (
                   <div className="ml-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Notas que precisam de justificativa *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Notas que precisam de justificativa</label>
                     {formulario.escalaId ? (
                       (() => {
                         const escalaSelecionada = (escalasCompetencia || []).find(e => e.id === formulario.escalaId);
@@ -2523,9 +2527,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                   </label>
                               );
                             })}
-                            {notasSelecionadas.length === 0 && (
-                              <p className="text-xs text-amber-600 mt-2">Selecione pelo menos uma nota</p>
-                  )}
                 </div>
                         );
                       })()
@@ -2595,8 +2596,25 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                           />
                           <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>{item.nome}</p>
-                          {(item as any).matricula !== undefined && (
-                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>{(item as any).matricula}</p>
+                          {(item as Colaborador).matricula && (
+                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                              Matrícula: {(item as Colaborador).matricula}
+                            </p>
+                          )}
+                          {(item as Colaborador).cargoId && (
+                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                              Cargo: {(cargos || []).find(c => c.id === (item as Colaborador).cargoId)?.nome || 'Sem cargo'}
+                            </p>
+                          )}
+                          {(item as Colaborador).setor && (
+                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                              Setor: {(item as Colaborador).setor}
+                            </p>
+                          )}
+                          {(item as Colaborador).dataAdmissao && (
+                            <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                              Data de Admissão: {new Date((item as Colaborador).dataAdmissao).toLocaleDateString('pt-BR')}
+                            </p>
                           )}
                           </div>
                         </label>
@@ -2611,9 +2629,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         // Para DESEMPENHO, mostrar gestores e colaboradores por equipe
         // Obter gestores das equipes selecionadas
         const gestoresEquipes = equipesSelecionadas.flatMap(equipeId => {
-          if (equipeId === 'TODA_EMPRESA') {
-            return (colaboradores || []).filter(c => c.isGestor && c.situacao === 'ATIVO');
-          }
           const equipe = (equipes || []).find(e => e.id === equipeId);
           if (!equipe) return [];
           const gestor = (colaboradores || []).find(c => c.id === equipe.gestorId && c.situacao === 'ATIVO');
@@ -2729,7 +2744,16 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                                       {colaborador.nome}
                                     </p>
                           <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                                      {colaborador.matricula} - {(cargos || []).find(c => c.id === colaborador.cargoId)?.nome || 'Sem cargo'}
+                                      Matrícula: {colaborador.matricula}
+                          </p>
+                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                                      Cargo: {(cargos || []).find(c => c.id === colaborador.cargoId)?.nome || 'Sem cargo'}
+                          </p>
+                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                                      Setor: {colaborador.setor || 'Não informado'}
+                          </p>
+                          <p className={`text-xs ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                                      Data de Admissão: {new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR')}
                           </p>
                       </div>
                     </label>
@@ -2787,35 +2811,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           );
         }
         
-        // Para DESEMPENHO, Step 4 é Configurações Avançadas - Em desenvolvimento
-        return (
-          <div className="space-y-6">
-            <div className="text-center mb-8">
-              <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Configurações Avançadas</h3>
-              <p className="text-gray-600">Esta funcionalidade está em desenvolvimento</p>
-                </div>
-
-            <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
-              <div className="max-w-md mx-auto">
-                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Settings className="w-10 h-10 text-gray-400" />
-                  </div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">Em Desenvolvimento</h4>
-                <p className="text-sm text-gray-600 mb-6">
-                  As configurações avançadas estarão disponíveis em breve. Você pode continuar com a criação da avaliação.
-                </p>
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>Esta etapa pode ser pulada</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 5:
-        // Revisão e Confirmação para todos os tipos padrão
+        // Para DESEMPENHO, Step 4 é Revisão e Confirmação
         if (formulario.tipo === 'DESEMPENHO') {
           return (
             <div className="space-y-6">
@@ -2839,12 +2835,26 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
                   <div className="space-y-2 text-sm">
-                    <p><strong>Equipes:</strong> {equipesSelecionadas.length}</p>
-                    <p><strong>Tipo de Avaliação:</strong> {(formulario as any).tipoAvaliacaoDesempenho}°</p>
-                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
-                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                    {(() => {
+                      // Calcular equipes com funcionários selecionados
+                      const equipesComFuncionarios = new Set<string>();
+                      formulario.participantesConfig.pessoasSelecionadas.forEach(pessoaId => {
+                        const colaborador = (colaboradores || []).find(c => c.id === pessoaId);
+                        if (colaborador && colaborador.equipeId) {
+                          equipesComFuncionarios.add(colaborador.equipeId);
+                        }
+                      });
+                      return (
+                        <>
+                          <p><strong>Equipes:</strong> {equipesComFuncionarios.size} {equipesComFuncionarios.size !== equipesSelecionadas.length && `(de ${equipesSelecionadas.length} selecionadas)`}</p>
+                          <p><strong>Tipo de Avaliação:</strong> {(formulario as any).tipoAvaliacaoDesempenho}°</p>
+                          <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                          <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
-              </div>
             </div>
           </div>
         );

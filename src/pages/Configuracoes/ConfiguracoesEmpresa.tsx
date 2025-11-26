@@ -236,3 +236,4 @@ const ConfiguracoesEmpresa: React.FC = () => {
 export default ConfiguracoesEmpresa;
 
 
+
