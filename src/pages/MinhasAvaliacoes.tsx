@@ -16,24 +16,41 @@ import { useDataStore } from '../stores/dataStore';
 import { useAuthStore } from '../stores/authStore';
 
 const MinhasAvaliacoes: React.FC = () => {
-  const { avaliacoesCiclo, avaliacaoParticipantes, colaboradores } = useDataStore();
+  const { avaliacoesCiclo, avaliacaoParticipantes, colaboradores, respostasAvaliacao, competencias, escalasCompetencia } = useDataStore();
   const { usuario } = useAuthStore();
   
   const [filtroStatus, setFiltroStatus] = useState<string>('TODOS');
   const [filtroTipo, setFiltroTipo] = useState<string>('TODOS');
   const [termoBusca, setTermoBusca] = useState('');
 
-  // Buscar avaliações onde o usuário é participante
+  // Buscar avaliações onde o usuário é o AVALIADOR (quem precisa responder)
+  // Colaboradores só veem autoavaliações, gestores veem todas as avaliações onde são avaliadores
   const minhasAvaliacoes = (avaliacaoParticipantes || []).filter(participante => {
-    // Verificar se o usuário é o avaliado ou avaliador
-    const isAvaliado = participante.avaliadoId === usuario?.colaboradorId;
-    const isAvaliador = participante.avaliadorId === usuario?.colaboradorId;
+    if (!usuario?.colaboradorId) return false;
     
-    return isAvaliado || isAvaliador;
+    const isAvaliador = participante.avaliadorId === usuario.colaboradorId;
+    const isAutoAvaliacao = participante.avaliadoId === usuario.colaboradorId && 
+                           participante.avaliadorId === usuario.colaboradorId;
+    
+    // Se for COLABORADOR (não gestor), só mostrar autoavaliações
+    if (usuario.perfil === 'COLABORADOR') {
+      return isAutoAvaliacao;
+    }
+    
+    // Se for GESTOR ou ADMIN, mostrar todas as avaliações onde ele é o avaliador
+    return isAvaliador;
   }).map(participante => {
     const avaliacao = (avaliacoesCiclo || []).find(a => a.id === participante.avaliacaoCicloId);
     const avaliado = (colaboradores || []).find(c => c.id === participante.avaliadoId);
     const avaliador = (colaboradores || []).find(c => c.id === participante.avaliadorId);
+    
+    // Calcular progresso
+    const respostasDoParticipante = (respostasAvaliacao || []).filter(r => 
+      r.avaliacaoParticipanteId === participante.id
+    );
+    const competenciasTotal = avaliacao?.competenciasSelecionadas?.length || 0;
+    const respostasCompletas = respostasDoParticipante.filter(r => r.nota > 0).length;
+    const progresso = competenciasTotal > 0 ? (respostasCompletas / competenciasTotal) * 100 : 0;
     
     return {
       ...participante,
@@ -42,10 +59,16 @@ const MinhasAvaliacoes: React.FC = () => {
       avaliador,
       isMinhaAutoAvaliacao: participante.avaliadoId === usuario?.colaboradorId && participante.avaliadorId === usuario?.colaboradorId,
       souAvaliador: participante.avaliadorId === usuario?.colaboradorId,
-      souAvaliado: participante.avaliadoId === usuario?.colaboradorId
+      souAvaliado: participante.avaliadoId === usuario?.colaboradorId,
+      progresso: Math.round(progresso),
+      respostasCompletas,
+      competenciasTotal
     };
   }).filter(item => {
     if (!item.avaliacao) return false;
+    
+    // Só mostrar avaliações em andamento ou concluídas
+    if (item.avaliacao.status === 'CANCELADA') return false;
     
     // Filtros
     if (filtroStatus !== 'TODOS' && item.status !== filtroStatus) return false;
@@ -90,10 +113,33 @@ const MinhasAvaliacoes: React.FC = () => {
     if (item.souAvaliador && !item.souAvaliado) {
       return `Avaliar: ${item.avaliado?.nome}`;
     }
-    if (item.souAvaliado && !item.souAvaliador) {
-      return `Avaliado por: ${item.avaliador?.nome}`;
-    }
     return 'Avaliação';
+  };
+
+  // Calcular resultado da avaliação
+  const calcularResultadoAvaliacao = (item: any) => {
+    const respostasDoParticipante = (respostasAvaliacao || []).filter(r => 
+      r.avaliacaoParticipanteId === item.id
+    );
+    
+    const notas = respostasDoParticipante
+      .filter(r => r.nota > 0)
+      .map(r => r.nota);
+    
+    const media = notas.length > 0 
+      ? (notas.reduce((acc, n) => acc + n, 0) / notas.length)
+      : 0;
+    
+    // Buscar escala para converter peso em nota
+    const avaliacao = item.avaliacao;
+    const escala = avaliacao ? (escalasCompetencia || []).find(e => e.id === avaliacao.escalaId) : null;
+    const notaMedia = escala?.notas?.find(n => n.peso === Math.round(media));
+    
+    return {
+      media: notaMedia?.nota || media.toFixed(2),
+      respostas: respostasDoParticipante.filter(r => r.nota > 0),
+      escala
+    };
   };
 
   // Estatísticas
@@ -288,15 +334,7 @@ const MinhasAvaliacoes: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 ml-4">
-                  {item.status === 'CONCLUIDA' ? (
-                    <Link
-                      to={`/avaliacoes/resultado/${item.id}`}
-                      className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      <Eye className="w-4 h-4 mr-2" />
-                      Ver Resultado
-                    </Link>
-                  ) : (
+                  {item.status !== 'CONCLUIDA' && (
                     <Link
                       to={`/responder-avaliacao?participante=${item.id}`}
                       className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -316,17 +354,51 @@ const MinhasAvaliacoes: React.FC = () => {
                       Progresso
                     </span>
                     <span className="text-sm text-gray-600">
-                      Em andamento
+                      {item.respostasCompletas}/{item.competenciasTotal} competências ({item.progresso}%)
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: '45%' }}
+                      style={{ width: `${item.progresso}%` }}
                     />
                   </div>
                 </div>
               )}
+
+              {/* Resultado para avaliações concluídas */}
+              {item.status === 'CONCLUIDA' && (() => {
+                const resultado = calcularResultadoAvaliacao(item);
+                return (
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Resultado da Avaliação:</h4>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                        <span className="text-sm font-medium text-green-900">Média Final: </span>
+                        <span className="text-lg font-bold text-green-900">{resultado.media}</span>
+                      </div>
+                    </div>
+                    {resultado.respostas.length > 0 && (
+                      <div className="text-sm text-gray-600">
+                        <p className="font-medium mb-2 text-gray-700">Detalhes por Competência:</p>
+                        <div className="space-y-2">
+                          {resultado.respostas.map(r => {
+                            const competencia = (competencias || []).find(c => c.id === r.competenciaId);
+                            const nota = resultado.escala?.notas?.find(n => n.peso === r.nota);
+                            return (
+                              <div key={r.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded border border-gray-200">
+                                <span className="text-gray-700">{competencia?.nome || 'Competência'}</span>
+                                <span className="font-medium text-gray-900">{nota?.nota || r.nota}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Datas importantes */}
               {item.avaliacao && (

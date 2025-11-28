@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, ChevronDown, ChevronUp, Clock, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
+import { Save, Send, User, Building2, Briefcase, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSearchParams } from 'react-router-dom';
 import { useDataStore } from '../stores/dataStore';
 import { useAuthStore } from '../stores/authStore';
 
@@ -10,80 +11,166 @@ interface RespostaCompetencia {
   justificativa: string;
 }
 
-interface RespostaAvaliacao {
-  avaliacaoId: string;
-  respostas: RespostaCompetencia[];
-  observacoesGerais: string;
-  status: 'RASCUNHO' | 'FINALIZADA';
-}
-
 const RespostaAvaliacao: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const participanteIdFromUrl = searchParams.get('participante');
+  
   const { 
     avaliacoesCiclo, 
+    avaliacaoParticipantes,
+    respostasAvaliacao,
     competencias, 
     tiposCompetencia, 
     escalasCompetencia,
+    colaboradores,
+    cargos,
+    equipes,
     addRespostaAvaliacao,
-    updateRespostaAvaliacao 
+    updateRespostaAvaliacao,
+    updateAvaliacaoParticipante
   } = useDataStore();
   const { usuario } = useAuthStore();
 
   const [avaliacaoSelecionada, setAvaliacaoSelecionada] = useState<string>('');
+  const [participanteSelecionado, setParticipanteSelecionado] = useState<string>(participanteIdFromUrl || '');
   const [respostas, setRespostas] = useState<RespostaCompetencia[]>([]);
-  const [observacoesGerais, setObservacoesGerais] = useState('');
-  const [abaSelecionada, setAbaSelecionada] = useState<string>('');
-  const [acordeaoAberto, setAcordeaoAberto] = useState<Record<string, boolean>>({});
 
   // Filtrar avaliações disponíveis para o usuário atual
   const avaliacoesDisponiveis = (avaliacoesCiclo || []).filter(avaliacao => {
-    // Lógica simplificada - em um sistema real, seria mais complexa
-    return avaliacao.status === 'EM_ANDAMENTO';
+    if (!usuario?.colaboradorId) return false;
+    
+    const temParticipacao = (avaliacaoParticipantes || []).some(p => 
+      p.avaliacaoCicloId === avaliacao.id && 
+      p.avaliadorId === usuario.colaboradorId &&
+      p.status !== 'CONCLUIDA'
+    );
+    
+    return avaliacao.status === 'EM_ANDAMENTO' && temParticipacao;
   });
 
   const avaliacaoAtual = (avaliacoesCiclo || []).find(a => a.id === avaliacaoSelecionada);
+  
+  // Buscar participantes disponíveis para o usuário atual nesta avaliação
+  const participantesDisponiveis = React.useMemo(() => {
+    if (!avaliacaoSelecionada || !usuario?.colaboradorId) return [];
+    
+    return (avaliacaoParticipantes || []).filter(p => 
+      p.avaliacaoCicloId === avaliacaoSelecionada &&
+      p.avaliadorId === usuario.colaboradorId &&
+      p.status !== 'CONCLUIDA'
+    );
+  }, [avaliacaoSelecionada, usuario?.colaboradorId, avaliacaoParticipantes]);
+  
+  // Participante atual selecionado
+  const participanteAtual = (avaliacaoParticipantes || []).find(p => p.id === participanteSelecionado);
+  
+  // Dados do avaliado
+  const avaliado = participanteAtual ? (colaboradores || []).find(c => c.id === participanteAtual.avaliadoId) : null;
+  const cargoAvaliado = avaliado ? (cargos || []).find(c => c.id === avaliado.cargoId) : null;
+  const equipeAvaliado = avaliado ? (equipes || []).find(e => e.id === avaliado.equipeId) : null;
 
-  // Agrupar competências por tipo
+  // Buscar autoavaliação do subordinado (para 180°)
+  const autoAvaliacaoSubordinado = React.useMemo(() => {
+    if (!participanteAtual || !avaliacaoAtual || avaliacaoAtual.tipoAvaliacao !== '180') return null;
+    
+    // Buscar a autoavaliação do subordinado (onde avaliador = avaliado)
+    return (avaliacaoParticipantes || []).find(p => 
+      p.avaliacaoCicloId === avaliacaoAtual.id &&
+      p.avaliadoId === participanteAtual.avaliadoId &&
+      p.avaliadorId === participanteAtual.avaliadoId
+    );
+  }, [participanteAtual, avaliacaoAtual, avaliacaoParticipantes]);
+
+  // Respostas da autoavaliação do subordinado (para 180°)
+  const respostasAutoAvaliacao = React.useMemo(() => {
+    if (!autoAvaliacaoSubordinado) return [];
+    
+    return (respostasAvaliacao || []).filter(r => 
+      r.avaliacaoParticipanteId === autoAvaliacaoSubordinado.id
+    );
+  }, [autoAvaliacaoSubordinado, respostasAvaliacao]);
+
+  // Competências agrupadas por tipo
   const competenciasAgrupadas = React.useMemo(() => {
-    if (!avaliacaoAtual) return {};
+    if (!avaliacaoAtual) return [];
 
     const competenciasAvaliacao = (competencias || []).filter(c => 
       (avaliacaoAtual.competenciasSelecionadas || []).includes(c.id)
     );
 
-    return competenciasAvaliacao.reduce((acc, comp) => {
+    // Agrupar por tipo e ordenar
+    const agrupadas = competenciasAvaliacao.reduce((acc, comp) => {
       const tipo = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
       const tipoNome = tipo?.nome || 'Outros';
       
       if (!acc[tipoNome]) {
-        acc[tipoNome] = {
-          tipo: tipo,
-          competencias: []
-        };
+        acc[tipoNome] = [];
       }
-      acc[tipoNome].competencias.push(comp);
+      acc[tipoNome].push(comp);
       return acc;
-    }, {} as Record<string, { tipo: any; competencias: typeof competencias }>);
+    }, {} as Record<string, typeof competenciasAvaliacao>);
+
+    // Converter para array plano mantendo ordem: Técnica primeiro, depois Comportamental
+    const ordem = ['Técnica', 'Comportamental'];
+    const resultado: Array<{ tipo: string; competencia: typeof competenciasAvaliacao[0] }> = [];
+    
+    ordem.forEach(tipoNome => {
+      if (agrupadas[tipoNome]) {
+        agrupadas[tipoNome].forEach(comp => {
+          resultado.push({ tipo: tipoNome, competencia: comp });
+        });
+      }
+    });
+    
+    // Adicionar outros tipos
+    Object.keys(agrupadas).forEach(tipoNome => {
+      if (!ordem.includes(tipoNome)) {
+        agrupadas[tipoNome].forEach(comp => {
+          resultado.push({ tipo: tipoNome, competencia: comp });
+        });
+      }
+    });
+
+    return resultado;
   }, [avaliacaoAtual, competencias, tiposCompetencia]);
 
-  // Inicializar respostas quando avaliação é selecionada
+  // Inicializar respostas quando participante é selecionado
   useEffect(() => {
-    if (avaliacaoAtual) {
+    if (participanteAtual && avaliacaoAtual) {
       const competenciasIds = avaliacaoAtual.competenciasSelecionadas || [];
-      const respostasIniciais = competenciasIds.map(id => ({
-        competenciaId: id,
-        escala: 0,
-        justificativa: ''
-      }));
-      setRespostas(respostasIniciais);
       
-      // Abrir primeira aba
-      const primeiroTipo = Object.keys(competenciasAgrupadas)[0];
-      if (primeiroTipo) {
-        setAbaSelecionada(primeiroTipo);
-        setAcordeaoAberto({ [primeiroTipo]: true });
-      }
+      // Carregar respostas existentes para este participante
+      const respostasExistentes = (respostasAvaliacao || []).filter(r => 
+        r.avaliacaoParticipanteId === participanteAtual.id
+      );
+      
+      const respostasIniciais = competenciasIds.map(id => {
+        const respostaExistente = respostasExistentes.find(r => r.competenciaId === id);
+        return {
+          competenciaId: id,
+          escala: respostaExistente?.nota || 0,
+          justificativa: respostaExistente?.justificativa || ''
+        };
+      });
+      
+      setRespostas(respostasIniciais);
     }
-  }, [avaliacaoAtual, competenciasAgrupadas]);
+  }, [participanteAtual, avaliacaoAtual, respostasAvaliacao]);
+
+  // Auto-selecionar participante quando avaliação muda
+  useEffect(() => {
+    if (participanteIdFromUrl) {
+      const participanteFromUrl = (avaliacaoParticipantes || []).find(p => p.id === participanteIdFromUrl);
+      if (participanteFromUrl && participanteFromUrl.avaliadorId === usuario?.colaboradorId) {
+        setParticipanteSelecionado(participanteIdFromUrl);
+        setAvaliacaoSelecionada(participanteFromUrl.avaliacaoCicloId);
+      }
+    } else if (avaliacaoSelecionada && participantesDisponiveis.length === 1) {
+      setParticipanteSelecionado(participantesDisponiveis[0].id);
+    } else if (avaliacaoSelecionada && participantesDisponiveis.length > 0 && !participanteSelecionado) {
+      setParticipanteSelecionado(participantesDisponiveis[0].id);
+    }
+  }, [participanteIdFromUrl, avaliacaoSelecionada, participantesDisponiveis, avaliacaoParticipantes, usuario?.colaboradorId]);
 
   const handleRespostaChange = (competenciaId: string, campo: 'escala' | 'justificativa', valor: any) => {
     setRespostas(prev => prev.map(resp => 
@@ -101,29 +188,80 @@ const RespostaAvaliacao: React.FC = () => {
     };
   };
 
+  const getRespostaAutoAvaliacao = (competenciaId: string) => {
+    return respostasAutoAvaliacao.find(r => r.competenciaId === competenciaId);
+  };
+
+  const getEscalasDisponiveis = () => {
+    if (!avaliacaoAtual || !avaliacaoAtual.escalaId) return [];
+    const escala = (escalasCompetencia || []).find(e => e.id === avaliacaoAtual.escalaId);
+    if (!escala || !escala.notas) return [];
+    return escala.notas.sort((a, b) => a.peso - b.peso);
+  };
+
+  const getNotaPorPeso = (peso: number) => {
+    const escalas = getEscalasDisponiveis();
+    const nota = escalas.find(n => n.peso === peso);
+    return nota?.nota || '';
+  };
+
+  // Calcular média da avaliação
+  const calcularMedia = () => {
+    const respostasComNota = respostas.filter(r => r.escala > 0);
+    if (respostasComNota.length === 0) return 0;
+    
+    const soma = respostasComNota.reduce((acc, r) => acc + r.escala, 0);
+    return soma / respostasComNota.length;
+  };
+
+  // Calcular média da autoavaliação (para 180°)
+  const calcularMediaAutoAvaliacao = () => {
+    if (!autoAvaliacaoSubordinado) return 0;
+    
+    const respostasComNota = respostasAutoAvaliacao.filter(r => r.nota > 0);
+    if (respostasComNota.length === 0) return 0;
+    
+    const soma = respostasComNota.reduce((acc, r) => acc + r.nota, 0);
+    return soma / respostasComNota.length;
+  };
+
   const handleSalvarRascunho = () => {
-    if (!avaliacaoSelecionada) {
-      toast.error('Selecione uma avaliação');
+    if (!participanteSelecionado) {
+      toast.error('Selecione um participante');
       return;
     }
 
-    // Create individual responses for each competencia
     respostas.forEach(resposta => {
-      const respostaAvaliacao = {
-        avaliacaoParticipanteId: avaliacaoSelecionada,
-        competenciaId: resposta.competenciaId,
-        nota: resposta.escala,
-        justificativa: resposta.justificativa
-      };
-      addRespostaAvaliacao(respostaAvaliacao);
+      const respostaExistente = (respostasAvaliacao || []).find(r => 
+        r.avaliacaoParticipanteId === participanteSelecionado &&
+        r.competenciaId === resposta.competenciaId
+      );
+      
+      if (respostaExistente) {
+        updateRespostaAvaliacao(respostaExistente.id, {
+          nota: resposta.escala,
+          justificativa: resposta.justificativa
+        });
+      } else {
+        addRespostaAvaliacao({
+          avaliacaoParticipanteId: participanteSelecionado,
+          competenciaId: resposta.competenciaId,
+          nota: resposta.escala,
+          justificativa: resposta.justificativa
+        });
+      }
     });
+    
+    if (participanteAtual) {
+      updateAvaliacaoParticipante(participanteAtual.id, { status: 'EM_RASCUNHO' });
+    }
 
     toast.success('Rascunho salvo com sucesso!');
   };
 
   const handleFinalizar = () => {
-    if (!avaliacaoSelecionada) {
-      toast.error('Selecione uma avaliação');
+    if (!participanteSelecionado) {
+      toast.error('Selecione um participante');
       return;
     }
 
@@ -134,286 +272,279 @@ const RespostaAvaliacao: React.FC = () => {
       return;
     }
 
-    // Create individual responses for each competencia
     respostas.forEach(resposta => {
-      const respostaAvaliacao = {
-        avaliacaoParticipanteId: avaliacaoSelecionada,
-        competenciaId: resposta.competenciaId,
-        nota: resposta.escala,
-        justificativa: resposta.justificativa
-      };
-      addRespostaAvaliacao(respostaAvaliacao);
+      const respostaExistente = (respostasAvaliacao || []).find(r => 
+        r.avaliacaoParticipanteId === participanteSelecionado &&
+        r.competenciaId === resposta.competenciaId
+      );
+      
+      if (respostaExistente) {
+        updateRespostaAvaliacao(respostaExistente.id, {
+          nota: resposta.escala,
+          justificativa: resposta.justificativa
+        });
+      } else {
+        addRespostaAvaliacao({
+          avaliacaoParticipanteId: participanteSelecionado,
+          competenciaId: resposta.competenciaId,
+          nota: resposta.escala,
+          justificativa: resposta.justificativa
+        });
+      }
     });
+    
+    if (participanteAtual) {
+      updateAvaliacaoParticipante(participanteAtual.id, { 
+        status: 'CONCLUIDA',
+        dataFinalizacao: new Date().toISOString()
+      });
+    }
 
     toast.success('Avaliação finalizada com sucesso!');
     
     // Reset
     setAvaliacaoSelecionada('');
+    setParticipanteSelecionado('');
     setRespostas([]);
-    setObservacoesGerais('');
   };
 
-  const toggleAcordeao = (tipo: string) => {
-    setAcordeaoAberto(prev => ({
-      ...prev,
-      [tipo]: !prev[tipo]
-    }));
-  };
-
-  const getProgressoPorTipo = (tipo: string) => {
-    const competenciasTipo = competenciasAgrupadas[tipo]?.competencias || [];
-    const respostasCompletas = competenciasTipo.filter(comp => {
-      const resposta = getRespostaCompetencia(comp.id);
-      return resposta.escala > 0;
-    }).length;
-    
-    return {
-      completas: respostasCompletas,
-      total: competenciasTipo.length,
-      percentual: competenciasTipo.length > 0 ? (respostasCompletas / competenciasTipo.length) * 100 : 0
-    };
-  };
-
-  const getEscalasDisponiveis = () => {
-    return (escalasCompetencia || []).sort((a, b) => a.peso - b.peso);
-  };
-
-  const getCorEscala = (peso: number) => {
-    if (peso <= 2) return 'text-red-600 bg-red-50 border-red-200';
-    if (peso <= 3) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-    if (peso <= 4) return 'text-blue-600 bg-blue-50 border-blue-200';
-    return 'text-green-600 bg-green-50 border-green-200';
-  };
+  const isAvaliacao180 = avaliacaoAtual?.tipoAvaliacao === '180';
+  const mediaAvaliacao = calcularMedia();
+  const mediaAutoAvaliacao = calcularMediaAutoAvaliacao();
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Responder Avaliação</h1>
-        <p className="text-gray-600">Complete sua avaliação de desempenho</p>
-      </div>
-
-      {/* Seleção de Avaliação */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Selecionar Avaliação</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Avaliação Disponível
-            </label>
-            <select
-              value={avaliacaoSelecionada}
-              onChange={(e) => setAvaliacaoSelecionada(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Selecione uma avaliação</option>
-              {avaliacoesDisponiveis.map((avaliacao) => (
-                <option key={avaliacao.id} value={avaliacao.id}>
-                  {avaliacao.nome} - {avaliacao.tipoAvaliacao}
-                </option>
-              ))}
-            </select>
-          </div>
-          {avaliacaoAtual && (
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-medium text-blue-900 mb-2">{avaliacaoAtual.nome}</h3>
-              <p className="text-sm text-blue-700 mb-1">{avaliacaoAtual.descricao}</p>
-              <p className="text-xs text-blue-600">
-                Período: {new Date(avaliacaoAtual.dataInicio).toLocaleDateString()} - {new Date(avaliacaoAtual.dataFim).toLocaleDateString()}
-              </p>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      {/* Seleção de Avaliação - Só mostrar se não veio da URL */}
+      {!participanteIdFromUrl && (
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Selecionar Avaliação</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Avaliação Disponível
+              </label>
+              <select
+                value={avaliacaoSelecionada}
+                onChange={(e) => setAvaliacaoSelecionada(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Selecione uma avaliação</option>
+                {avaliacoesDisponiveis.map((avaliacao) => (
+                  <option key={avaliacao.id} value={avaliacao.id}>
+                    {avaliacao.nome} - {avaliacao.tipoAvaliacao}°
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
+            
+            {avaliacaoSelecionada && participantesDisponiveis.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Selecionar Participante {participantesDisponiveis.length > 1 ? '*' : ''}
+                </label>
+                <select
+                  value={participanteSelecionado}
+                  onChange={(e) => setParticipanteSelecionado(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required={participantesDisponiveis.length > 1}
+                >
+                  <option value="">Selecione um participante</option>
+                  {participantesDisponiveis.map((participante) => {
+                    const avaliado = (colaboradores || []).find(c => c.id === participante.avaliadoId);
+                    return (
+                      <option key={participante.id} value={participante.id}>
+                        {avaliado?.nome || 'Avaliado'}
+                        {participante.status === 'EM_RASCUNHO' ? ' (Rascunho)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {avaliacaoAtual && (
+      {avaliacaoAtual && participanteAtual && avaliado && (
         <>
-          {/* Instruções */}
-          {avaliacaoAtual.instrucoes && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
-                <div>
-                  <h3 className="font-medium text-amber-900 mb-1">Instruções</h3>
-                  <p className="text-sm text-amber-800">{avaliacaoAtual.instrucoes}</p>
+          {/* Título da Avaliação */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg p-6 mb-0">
+            <h1 className="text-2xl font-bold">{avaliacaoAtual.nome}</h1>
+          </div>
+
+          {/* Informações do Avaliado */}
+          <div className="bg-white border-x border-gray-200 p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex items-center gap-3">
+                  <User className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-600">Avaliado</p>
+                    <p className="font-semibold text-gray-900">{avaliado.nome}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Briefcase className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-600">Função</p>
+                    <p className="font-semibold text-gray-900">{cargoAvaliado?.nome || 'N/A'}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Building2 className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-600">Departamento</p>
+                    <p className="font-semibold text-gray-900">{equipeAvaliado?.nome || avaliado.setor || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="ml-6">
+                <div className="w-24 h-24 bg-blue-100 rounded-lg flex items-center justify-center border-2 border-blue-200">
+                  <User className="w-12 h-12 text-blue-400" />
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Abas por Tipo de Competência */}
-          <div className="bg-white rounded-lg shadow-sm border mb-6">
-            <div className="border-b">
-              <nav className="flex space-x-8 px-6" aria-label="Tabs">
-                {Object.keys(competenciasAgrupadas).map((tipo) => {
-                  const progresso = getProgressoPorTipo(tipo);
-                  const isActive = abaSelecionada === tipo;
-                  
-                  return (
-                    <button
-                      key={tipo}
-                      onClick={() => setAbaSelecionada(tipo)}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                        isActive
-                          ? 'border-blue-500 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>{tipo}</span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          progresso.percentual === 100 
-                            ? 'bg-green-100 text-green-800' 
-                            : progresso.percentual > 0 
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {progresso.completas}/{progresso.total}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* Conteúdo da Aba Selecionada */}
-            <div className="p-6">
-              {abaSelecionada && competenciasAgrupadas[abaSelecionada] && (
-                <div className="space-y-4">
-                  {competenciasAgrupadas[abaSelecionada].competencias.map((competencia) => {
-                    const resposta = getRespostaCompetencia(competencia.id);
-                    const escalas = getEscalasDisponiveis();
-                    
-                    return (
-                      <div key={competencia.id} className="border border-gray-200 rounded-lg">
-                        <button
-                          onClick={() => toggleAcordeao(competencia.id)}
-                          className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-gray-50"
-                        >
-                          <div className="flex-1">
-                            <h3 className="font-medium text-gray-900">{competencia.nome}</h3>
-                            <p className="text-sm text-gray-600 mt-1">{competencia.pergunta}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {resposta.escala > 0 && (
-                              <CheckCircle className="w-4 h-4 text-green-500" />
-                            )}
-                            {acordeaoAberto[competencia.id] ? (
-                              <ChevronUp className="w-4 h-4 text-gray-400" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
-                            )}
-                          </div>
-                        </button>
-
-                        {acordeaoAberto[competencia.id] && (
-                          <div className="px-4 pb-4 border-t border-gray-100">
-                            {/* Escalas de Avaliação */}
-                            <div className="mb-4">
-                              <label className="block text-sm font-medium text-gray-700 mb-3">
-                                Avaliação *
-                              </label>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {escalas.map((escala) => (
-                                  <label
-                                    key={escala.id}
-                                    className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                                      resposta.escala === escala.peso
-                                        ? getCorEscala(escala.peso)
-                                        : 'border-gray-200 hover:bg-gray-50'
-                                    }`}
-                                  >
-                                    <input
-                                      type="radio"
-                                      name={`escala-${competencia.id}`}
-                                      value={escala.peso}
-                                      checked={resposta.escala === escala.peso}
-                                      onChange={(e) => handleRespostaChange(
-                                        competencia.id, 
-                                        'escala', 
-                                        parseInt(e.target.value)
-                                      )}
-                                      className="sr-only"
-                                    />
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-medium">{escala.peso}</span>
-                                        <span className="text-sm">{escala.nome}</span>
-                                      </div>
-                                    </div>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Área de Justificativa */}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Justificativa / Comentários
-                              </label>
-                              <textarea
-                                value={resposta.justificativa}
-                                onChange={(e) => handleRespostaChange(
-                                  competencia.id, 
-                                  'justificativa', 
-                                  e.target.value
-                                )}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                rows={3}
-                                placeholder="Descreva exemplos específicos, situações ou justifique sua avaliação..."
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Observações Gerais */}
-          <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Observações Gerais
-            </h3>
-            <textarea
-              value={observacoesGerais}
-              onChange={(e) => setObservacoesGerais(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={4}
-              placeholder="Adicione comentários gerais sobre esta avaliação, pontos de melhoria, objetivos para o próximo período, etc."
-            />
+          {/* Tabela de Avaliação */}
+          <div className="bg-white border-x border-b border-gray-200 rounded-b-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      TIPO
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      QUESTÃO
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      AVALIAÇÃO
+                    </th>
+                    {isAvaliacao180 && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                        AVALIAÇÃO SUBORDINADO
+                      </th>
+                    )}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      CONSIDERAÇÕES
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {competenciasAgrupadas.map((item, index) => {
+                    const competencia = item.competencia;
+                    const resposta = getRespostaCompetencia(competencia.id);
+                    const respostaAuto = isAvaliacao180 ? getRespostaAutoAvaliacao(competencia.id) : null;
+                    const escalas = getEscalasDisponiveis();
+                    const tipoAnterior = index > 0 ? competenciasAgrupadas[index - 1].tipo : null;
+                    const mostrarTipo = tipoAnterior !== item.tipo;
+
+                    return (
+                      <tr key={competencia.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {mostrarTipo && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {item.tipo.toUpperCase()}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{competencia.nome}</p>
+                            <p className="text-xs text-gray-500 mt-1">{competencia.pergunta}</p>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <select
+                            value={resposta.escala}
+                            onChange={(e) => handleRespostaChange(competencia.id, 'escala', parseInt(e.target.value))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          >
+                            <option value="0">Selecione...</option>
+                            {escalas.map((nota) => (
+                              <option key={nota.id} value={nota.peso}>
+                                {nota.nota}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        {isAvaliacao180 && (
+                          <td className="px-6 py-4">
+                            {respostaAuto ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {getNotaPorPeso(respostaAuto.nota)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">Aguardando...</span>
+                            )}
+                          </td>
+                        )}
+                        <td className="px-6 py-4">
+                          <textarea
+                            value={resposta.justificativa}
+                            onChange={(e) => handleRespostaChange(competencia.id, 'justificativa', e.target.value)}
+                            placeholder="Adicione considerações sobre esta competência..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                            rows={2}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Média da Avaliação */}
+            <div className="bg-gray-50 border-t border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-6">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Média da Avaliação</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">
+                      {mediaAvaliacao > 0 ? getNotaPorPeso(Math.round(mediaAvaliacao)) : 'Não calculada'}
+                    </p>
+                  </div>
+                  {isAvaliacao180 && mediaAutoAvaliacao > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Média Subordinado</p>
+                      <p className="text-lg font-bold text-gray-900 mt-1">
+                        {getNotaPorPeso(Math.round(mediaAutoAvaliacao))}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Botões de Ação */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-end">
+          <div className="flex justify-end gap-4 mt-6">
             <button
               onClick={handleSalvarRascunho}
-              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              className="inline-flex items-center px-6 py-3 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-colors font-medium"
             >
-              <Save className="w-4 h-4" />
-              Salvar Rascunho
+              <Save className="w-5 h-5 mr-2" />
+              Salvar
             </button>
             <button
               onClick={handleFinalizar}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
-              <Send className="w-4 h-4" />
-              Finalizar Avaliação
+              <Send className="w-5 h-5 mr-2" />
+              Finalizar
             </button>
           </div>
         </>
       )}
 
-      {avaliacoesDisponiveis.length === 0 && (
+      {(!avaliacaoAtual || !participanteAtual) && !participanteIdFromUrl && (
         <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-          <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma avaliação disponível</h3>
+          <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma avaliação selecionada</h3>
           <p className="text-gray-600">
-            Não há avaliações pendentes para você no momento.
+            Selecione uma avaliação e participante para começar.
           </p>
         </div>
       )}

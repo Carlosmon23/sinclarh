@@ -84,7 +84,8 @@ const GerenciarAvaliacoes: React.FC = () => {
 
   const handleExcluirAvaliacao = (avaliacaoId: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta avaliação?')) {
-      // Implementar exclusão
+      const { deleteAvaliacaoCiclo } = useDataStore.getState();
+      deleteAvaliacaoCiclo(avaliacaoId);
       toast.success('Avaliação excluída com sucesso!');
     }
   };

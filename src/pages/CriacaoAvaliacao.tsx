@@ -127,24 +127,114 @@ const CriacaoAvaliacao: React.FC = () => {
       return;
     }
 
+    // Determinar tipo de avaliação baseado no tipo selecionado
+    const tipoAvaliacao = tipoSelecionado === 'AVALIACAO_360' ? '360' : 
+                         tipoSelecionado === 'AVALIACAO_GESTOR' ? '90' : '90';
+    
+    // Determinar incluiTecnica e incluiComportamental baseado nas competências selecionadas
+    const competenciasSelecionadasObjs = (competencias || []).filter(c => 
+      formulario.competenciasSelecionadas.includes(c.id)
+    );
+    const temTecnica = competenciasSelecionadasObjs.some(c => {
+      const tipo = (tiposCompetencia || []).find(t => t.id === c.tipoCompetenciaId);
+      return tipo?.nome === 'Técnica';
+    });
+    const temComportamental = competenciasSelecionadasObjs.some(c => {
+      const tipo = (tiposCompetencia || []).find(t => t.id === c.tipoCompetenciaId);
+      return tipo?.nome === 'Comportamental';
+    });
+    
     const novaAvaliacao = {
       nome: formulario.nome,
       descricao: formulario.descricao,
-      tipo: 'DESEMPENHO' as const,
-      tipoAvaliacao: '360' as const,
+      tipo: 'DESEMPENHO' as const, // CriacaoAvaliacao é sempre DESEMPENHO
+      tipoAvaliacao: tipoAvaliacao as "90" | "180" | "360",
       dataInicio: formulario.dataInicio,
       dataLimite: formulario.dataFim,
       dataFim: formulario.dataFim,
       status: 'CRIADA' as const,
-      incluiTecnica: true,
-      incluiComportamental: true,
-      escalaId: 'escala-001',
+      incluiTecnica: temTecnica,
+      incluiComportamental: temComportamental,
+      escalaId: 'escala-001', // TODO: Permitir seleção de escala
       competenciasSelecionadas: formulario.competenciasSelecionadas,
       instrucoes: formulario.instrucoes,
       empresaId: 'emp-001'
     };
 
     addAvaliacao(novaAvaliacao);
+    
+    // Criar participantes automaticamente
+    const { avaliacoesCiclo, addAvaliacaoParticipante, colaboradores } = useDataStore.getState();
+    const avaliacaoCriada = avaliacoesCiclo[avaliacoesCiclo.length - 1];
+    
+    if (avaliacaoCriada && formulario.pessoasSelecionadas.length > 0) {
+      formulario.pessoasSelecionadas.forEach((avaliadoId: string) => {
+        const avaliado = (colaboradores || []).find(c => c.id === avaliadoId);
+        if (!avaliado) return;
+        
+        // Para 90°: apenas gestor avalia
+        if (tipoAvaliacao === '90' && avaliado.gestorId) {
+          addAvaliacaoParticipante({
+            avaliacaoCicloId: avaliacaoCriada.id,
+            avaliadorId: avaliado.gestorId,
+            avaliadoId: avaliadoId,
+            status: 'PENDENTE'
+          });
+        }
+        
+        // Para 180°: gestor + autoavaliação
+        if (tipoAvaliacao === '180') {
+          if (avaliado.gestorId) {
+            addAvaliacaoParticipante({
+              avaliacaoCicloId: avaliacaoCriada.id,
+              avaliadorId: avaliado.gestorId,
+              avaliadoId: avaliadoId,
+              status: 'PENDENTE'
+            });
+          }
+          addAvaliacaoParticipante({
+            avaliacaoCicloId: avaliacaoCriada.id,
+            avaliadorId: avaliadoId,
+            avaliadoId: avaliadoId,
+            status: 'PENDENTE'
+          });
+        }
+        
+        // Para 360°: gestor + autoavaliação + pares
+        if (tipoAvaliacao === '360') {
+          if (avaliado.gestorId) {
+            addAvaliacaoParticipante({
+              avaliacaoCicloId: avaliacaoCriada.id,
+              avaliadorId: avaliado.gestorId,
+              avaliadoId: avaliadoId,
+              status: 'PENDENTE'
+            });
+          }
+          addAvaliacaoParticipante({
+            avaliacaoCicloId: avaliacaoCriada.id,
+            avaliadorId: avaliadoId,
+            avaliadoId: avaliadoId,
+            status: 'PENDENTE'
+          });
+          // Pares
+          const pares = (colaboradores || []).filter(c => 
+            c.id !== avaliadoId &&
+            c.equipeId === avaliado.equipeId &&
+            c.gestorId === avaliado.gestorId &&
+            c.situacao === 'ATIVO'
+          );
+          pares.forEach(par => {
+            addAvaliacaoParticipante({
+              avaliacaoCicloId: avaliacaoCriada.id,
+              avaliadorId: par.id,
+              avaliadoId: avaliadoId,
+              status: 'PENDENTE'
+            });
+          });
+        }
+      });
+    }
+    
     toast.success('Avaliação criada com sucesso!');
     
     // Reset form

@@ -600,9 +600,25 @@ export const useDataStore = create<DataStore>((set, get) => ({
 
   // Participantes
   loadAvaliacaoParticipantes: () => {
-    const saved = localStorage.getItem('avaliacaoParticipantes');
-    if (saved) {
-      set({ avaliacaoParticipantes: JSON.parse(saved) });
+    try {
+      const saved = localStorage.getItem('avaliacaoParticipantes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          set({ avaliacaoParticipantes: parsed });
+          return;
+        }
+      }
+      // Fallback: initialize with mock data when absent or empty
+      const { mockAvaliacaoParticipantes } = require('../data/mockData');
+      set({ avaliacaoParticipantes: mockAvaliacaoParticipantes });
+      localStorage.setItem('avaliacaoParticipantes', JSON.stringify(mockAvaliacaoParticipantes));
+    } catch (error) {
+      // If localStorage content is corrupted, reset with mock
+      const { mockAvaliacaoParticipantes } = require('../data/mockData');
+      set({ avaliacaoParticipantes: mockAvaliacaoParticipantes });
+      localStorage.setItem('avaliacaoParticipantes', JSON.stringify(mockAvaliacaoParticipantes));
+      console.error('Erro ao carregar avaliacaoParticipantes. Reset para mock.', error);
     }
   },
 
