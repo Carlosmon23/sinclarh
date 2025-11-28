@@ -128,7 +128,8 @@ const CriacaoAvaliacao: React.FC = () => {
     }
 
     // Determinar tipo de avaliação baseado no tipo selecionado
-    const tipoAvaliacao = tipoSelecionado === 'AVALIACAO_360' ? '360' : 
+    // CriacaoAvaliacao.tsx não suporta 180°, apenas 90° e 360°
+    const tipoAvaliacao: '90' | '180' | '360' = tipoSelecionado === 'AVALIACAO_360' ? '360' : 
                          tipoSelecionado === 'AVALIACAO_GESTOR' ? '90' : '90';
     
     // Determinar incluiTecnica e incluiComportamental baseado nas competências selecionadas
@@ -182,23 +183,8 @@ const CriacaoAvaliacao: React.FC = () => {
           });
         }
         
-        // Para 180°: gestor + autoavaliação
-        if (tipoAvaliacao === '180') {
-          if (avaliado.gestorId) {
-            addAvaliacaoParticipante({
-              avaliacaoCicloId: avaliacaoCriada.id,
-              avaliadorId: avaliado.gestorId,
-              avaliadoId: avaliadoId,
-              status: 'PENDENTE'
-            });
-          }
-          addAvaliacaoParticipante({
-            avaliacaoCicloId: avaliacaoCriada.id,
-            avaliadorId: avaliadoId,
-            avaliadoId: avaliadoId,
-            status: 'PENDENTE'
-          });
-        }
+        // Para 180°: gestor + autoavaliação (não usado em CriacaoAvaliacao.tsx, apenas para referência)
+        // Este arquivo só suporta 90° e 360°
         
         // Para 360°: gestor + autoavaliação + pares
         if (tipoAvaliacao === '360') {
