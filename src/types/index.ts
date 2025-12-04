@@ -111,6 +111,7 @@ export interface EscalaCompetencia {
   notas: NotaEscala[]; // Lista de notas da escala
   empresaId: string;
   ativa: boolean;
+  padrao?: boolean; // Indica se é a escala padrão a ser exibida primeiro nas avaliações
   criadaEm: string;
   atualizadaEm: string;
   // Campos legados para compatibilidade (deprecated)

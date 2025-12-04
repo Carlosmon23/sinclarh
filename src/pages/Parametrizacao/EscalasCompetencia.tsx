@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Search, BarChart3, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, BarChart3, X, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDataStore } from '../../stores/dataStore';
 import { EscalaCompetencia, NotaEscala } from '../../types';
@@ -14,9 +14,29 @@ const EscalasCompetencia: React.FC = () => {
     tipo: 'AVALIACAO_DESEMPENHO' as 'AVALIACAO_DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' | 'FEEDBACK' | 'PESQUISA',
     nome: '',
     empresaId: 'emp-001',
-    ativa: true
+    ativa: true,
+    padrao: true
   });
   const [notas, setNotas] = useState<Array<{ nota: string; peso: number }>>([]);
+
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (escala: EscalaCompetencia) => {
+    handleEdit(escala);
+  };
+
+  const handleMarcarTodasComoPadrao = () => {
+    if (window.confirm('Deseja marcar todas as escalas como padrão?')) {
+      (escalasCompetencia || []).forEach(escala => {
+        if (!escala.padrao) {
+          updateEscalaCompetencia(escala.id, { ...escala, padrao: true });
+        }
+      });
+      toast.success('Todas as escalas foram marcadas como padrão!');
+    }
+  };
 
   const filteredEscalas = (escalasCompetencia || []).filter(escala =>
     escala.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -72,7 +92,7 @@ const EscalasCompetencia: React.FC = () => {
   };
 
   const resetForm = () => {
-    setFormData({ codigo: '', tipo: 'AVALIACAO_DESEMPENHO' as 'AVALIACAO_DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' | 'FEEDBACK' | 'PESQUISA', nome: '', empresaId: 'emp-001', ativa: true });
+    setFormData({ codigo: '', tipo: 'AVALIACAO_DESEMPENHO' as 'AVALIACAO_DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' | 'FEEDBACK' | 'PESQUISA', nome: '', empresaId: 'emp-001', ativa: true, padrao: true });
     setNotas([]);
     setEditingEscala(null);
     setIsModalOpen(false);
@@ -85,7 +105,8 @@ const EscalasCompetencia: React.FC = () => {
       tipo: escala.tipo,
       nome: escala.nome,
       empresaId: escala.empresaId,
-      ativa: escala.ativa
+      ativa: escala.ativa,
+      padrao: escala.padrao || false
     });
     // Carregar notas da escala
     setNotas(escala.notas?.map(n => ({ nota: n.nota, peso: n.peso })) || []);
@@ -124,170 +145,215 @@ const EscalasCompetencia: React.FC = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Escalas de Competência</h1>
-        <p className="text-gray-600">Gerencie as escalas de avaliação das competências</p>
-      </div>
-
-      {/* Formulário Superior */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {editingEscala ? 'Editar Escala de Competência' : 'Nova Escala de Competência'}
-          </h2>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Escalas de Competência</h1>
+            <p className="text-gray-600">Gerencie as escalas de avaliação das competências</p>
+          </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleMarcarTodasComoPadrao}
+              className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 flex items-center gap-2"
+              title="Marcar todas as escalas como padrão"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Marcar Todas como Padrão
+            </button>
+            <button
+              onClick={handleOpenModal}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              Novo
+              Nova Escala
             </button>
           </div>
         </div>
-
-        {isModalOpen && (
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Código *
-              </label>
-              <input
-                type="text"
-                value={formData.codigo}
-                onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Ex: INS, ADE, BOM, EXC"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tipo *
-              </label>
-              <select
-                value={formData.tipo}
-                onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="AVALIACAO_DESEMPENHO">Avaliação de Desempenho</option>
-                <option value="AVALIACAO_DIRECIONADA">Avaliação Direcionada</option>
-                <option value="ONBOARDING">Onboarding</option>
-                <option value="OFFBOARDING">Offboarding</option>
-                <option value="FEEDBACK">Feedback</option>
-                <option value="PESQUISA">Pesquisa</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nome *
-              </label>
-              <input
-                type="text"
-                value={formData.nome}
-                onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Ex: Adequado, Excelente"
-                required
-              />
-            </div>
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="ativa"
-                checked={formData.ativa}
-                onChange={(e) => setFormData({ ...formData, ativa: e.target.checked })}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="ativa" className="text-sm font-medium text-gray-700">
-                Escala Ativa
-              </label>
-            </div>
-            
-            {/* Seção de Notas da Escala */}
-            <div className="lg:col-span-3 border-t pt-4 mt-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Notas da Escala</h3>
-                <button
-                  type="button"
-                  onClick={handleAddNota}
-                  className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  Adicionar Nota
-                </button>
-              </div>
-              
-              {notas.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                  <p className="text-sm">Nenhuma nota adicionada. Clique em "Adicionar Nota" para começar.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {notas.map((nota, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Nota *
-                          </label>
-                          <input
-                            type="text"
-                            value={nota.nota}
-                            onChange={(e) => handleNotaChange(index, 'nota', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                            placeholder="Ex: Insuficiente, Adequado, Bom"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Peso *
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={nota.peso}
-                            onChange={(e) => handleNotaChange(index, 'peso', parseInt(e.target.value) || 1)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                            required
-                          />
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveNota(index)}
-                        className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Remover nota"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="lg:col-span-3 flex gap-2">
-              <button
-                type="submit"
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-              >
-                Salvar
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        )}
       </div>
 
-      {/* Tabela Inferior */}
+      {/* Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b sticky top-0 bg-white z-10">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {editingEscala ? 'Editar Escala de Competência' : 'Nova Escala de Competência'}
+                </h2>
+                <button
+                  onClick={resetForm}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Código *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.codigo}
+                      onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Ex: INS, ADE, BOM, EXC"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tipo *
+                    </label>
+                    <select
+                      value={formData.tipo}
+                      onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="AVALIACAO_DESEMPENHO">Avaliação de Desempenho</option>
+                      <option value="AVALIACAO_DIRECIONADA">Avaliação Direcionada</option>
+                      <option value="ONBOARDING">Onboarding</option>
+                      <option value="OFFBOARDING">Offboarding</option>
+                      <option value="FEEDBACK">Feedback</option>
+                      <option value="PESQUISA">Pesquisa</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nome *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Ex: Adequado, Excelente"
+                      required
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="ativa"
+                      checked={formData.ativa}
+                      onChange={(e) => setFormData({ ...formData, ativa: e.target.checked })}
+                      className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="ativa" className="text-sm font-medium text-gray-700">
+                      Escala Ativa
+                    </label>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="padrao"
+                        checked={formData.padrao}
+                        onChange={(e) => setFormData({ ...formData, padrao: e.target.checked })}
+                        className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="padrao" className="text-sm font-medium text-gray-700">
+                        Escala Padrão
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 ml-6">
+                      Escalas marcadas como padrão aparecem em primeiro lugar ao criar avaliações
+                    </p>
+                  </div>
+                </div>
+            
+                {/* Seção de Notas da Escala */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Notas da Escala</h3>
+                    <button
+                      type="button"
+                      onClick={handleAddNota}
+                      className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Adicionar Nota
+                    </button>
+                  </div>
+                  
+                  {notas.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                      <p className="text-sm">Nenhuma nota adicionada. Clique em "Adicionar Nota" para começar.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {notas.map((nota, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Nota *
+                              </label>
+                              <input
+                                type="text"
+                                value={nota.nota}
+                                onChange={(e) => handleNotaChange(index, 'nota', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                placeholder="Ex: Insuficiente, Adequado, Bom"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Peso *
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={nota.peso}
+                                onChange={(e) => handleNotaChange(index, 'peso', parseInt(e.target.value) || 1)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                required
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNota(index)}
+                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remover nota"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex gap-2 pt-4 border-t">
+                  <button
+                    type="submit"
+                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Salvar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Escalas */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-6 border-b">
           <div className="flex justify-between items-center">
@@ -341,9 +407,14 @@ const EscalasCompetencia: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <BarChart3 className="w-4 h-4 text-gray-400 mr-2" />
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-gray-400" />
                       <span className="text-sm font-medium text-gray-900">{escala.nome}</span>
+                      {escala.padrao && (
+                        <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
+                          Padrão
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -377,8 +448,9 @@ const EscalasCompetencia: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleEdit(escala)}
+                        onClick={() => handleOpenEditModal(escala)}
                         className="text-blue-600 hover:text-blue-900"
+                        title="Editar"
                       >
                         <Edit className="w-4 h-4" />
                       </button>

@@ -81,6 +81,10 @@ interface FormularioAvaliacaoWizard {
   equipesSelecionadas?: string[];
   tipoAvaliacaoDesempenho?: '90' | '180' | '360';
   tiposCompetenciaSelecionados?: string[]; // IDs dos tipos de competência selecionados (Técnica, Comportamental)
+  gestorSelecionadoId?: string; // ID do gestor selecionado
+  diasMinimoAdmissao?: number; // Número de dias mínimos de admissão para incluir colaborador
+  gestorSelecionadoId?: string; // ID do gestor selecionado
+  diasMinimoAdmissao?: number; // Número de dias mínimos de admissão para incluir colaborador
 
   // Special Workflows Fields
   // OnBoarding specific
@@ -152,12 +156,26 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     console.groupEnd();
   }, [avaliacoesCiclo]);
 
+  // Função auxiliar para verificar se colaborador é elegível baseado na data de admissão
+  const colaboradorEhElegivel = (colaborador: any): boolean => {
+    const diasMinimo = (formulario as any).diasMinimoAdmissao;
+    if (!diasMinimo) return true; // Se não tiver filtro de dias, todos são elegíveis
+    
+    const hoje = new Date();
+    const dataAdmissao = new Date(colaborador.dataAdmissao);
+    const diffEmMs = hoje.getTime() - dataAdmissao.getTime();
+    const diffEmDias = Math.floor(diffEmMs / (1000 * 60 * 60 * 24));
+    
+    return diffEmDias >= diasMinimo;
+  };
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMinhasEquipes, setShowMinhasEquipes] = useState(false);
   const [secaoAtual, setSecaoAtual] = useState<1 | 2>(1); // Controla qual seção do Step 1 está visível
   const [gestorExpandido, setGestorExpandido] = useState<string | null>(null); // Estado para gestor expandido na seleção de participantes
+  const [filtroEquipes, setFiltroEquipes] = useState(''); // Filtro de busca para equipes
+  const [participantesAutoSelecionados, setParticipantesAutoSelecionados] = useState(false); // Controla se os participantes já foram auto-selecionados
   
   const [formulario, setFormulario] = useState<FormularioAvaliacaoWizard>({
     tipo: 'DESEMPENHO',
@@ -205,6 +223,43 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
       situacoes: ['ATIVO']
     }
   });
+
+  // Auto-selecionar colaboradores elegíveis quando entrar no step 3 (Participantes) para DESEMPENHO
+  useEffect(() => {
+    if (currentStep === 3 && formulario.tipo === 'DESEMPENHO' && !participantesAutoSelecionados) {
+      // Obter gestores das equipes selecionadas
+      const equipesSelecionadas = (formulario as any).equipesSelecionadas || [];
+      const gestoresEquipes = equipesSelecionadas.flatMap((equipeId: string) => {
+        const equipe = (equipes || []).find(e => e.id === equipeId);
+        if (!equipe) return [];
+        const gestor = (colaboradores || []).find(c => c.id === equipe.gestorId && c.situacao === 'ATIVO');
+        return gestor ? [{ gestor, equipe }] : [];
+      });
+      
+      // Remover duplicatas
+      const gestoresUnicos = gestoresEquipes.filter((item: any, index: number, self: any[]) => 
+        index === self.findIndex((g: any) => g.gestor.id === item.gestor.id)
+      );
+
+      const todosColaboradoresElegiveis = gestoresUnicos.flatMap((item: any) => {
+        const { gestor } = item;
+        return (colaboradores || [])
+          .filter(c => c.gestorId === gestor.id && c.situacao === 'ATIVO' && colaboradorEhElegivel(c))
+          .map(c => c.id);
+      });
+
+      if (todosColaboradoresElegiveis.length > 0) {
+        setFormulario(prev => ({
+          ...prev,
+          participantesConfig: {
+            ...prev.participantesConfig,
+            pessoasSelecionadas: todosColaboradoresElegiveis
+          }
+        }));
+        setParticipantesAutoSelecionados(true);
+      }
+    }
+  }, [currentStep, formulario.tipo, participantesAutoSelecionados, equipes, colaboradores, formulario]);
 
   const tiposAvaliacao = [
     {
@@ -276,7 +331,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         ...baseSteps,
         { number: 2, title: 'Seleção dos Avaliados', icon: Users },
         { number: 3, title: 'Participantes', icon: Users },
-        { number: 4, title: 'Revisão e Confirmação', icon: CheckCircle }
+        { number: 4, title: 'Configurações Avançadas', icon: Settings },
+        { number: 5, title: 'Revisão e Confirmação', icon: CheckCircle }
       ];
     }
     
@@ -306,55 +362,12 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   };
 
   const validateSecao1 = (): boolean => {
-    // Validações específicas de cada tipo de avaliação
-    if (formulario.tipo === 'DESEMPENHO') {
-      if (!(formulario as any).gestorSelecionadoId) {
-        toast.error('Selecione um gestor para a avaliação');
-        return false;
-      }
-      // tipoAvaliacaoDesempenho será validado no step 2, não aqui
+    // Apenas verifica se um tipo foi selecionado
+    // As configurações específicas serão validadas nas etapas seguintes
+    if (!formulario.tipo) {
+      toast.error('Selecione um tipo de avaliação');
+      return false;
     }
-    
-    if (formulario.tipo === 'FEEDBACK') {
-      if (!formulario.feedbackAvaliadorId) {
-        toast.error('Selecione o avaliador');
-        return false;
-      }
-      if (!formulario.feedbackAvaliadoId) {
-        toast.error('Selecione o colaborador a ser avaliado');
-        return false;
-      }
-      if (!formulario.feedbackTexto) {
-        toast.error('Escreva o texto do feedback');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'ONBOARDING') {
-      if (!formulario.onboardingDataAdmissaoInicio || !formulario.onboardingDataAdmissaoFim) {
-        toast.error('Preencha as datas de admissão');
-        return false;
-      }
-      if (!formulario.onboardingPeriodo) {
-        toast.error('Selecione o período de avaliação');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'OFFBOARDING') {
-      if (!formulario.offboardingDataDemissaoInicio || !formulario.offboardingDataDemissaoFim) {
-        toast.error('Preencha as datas de demissão');
-        return false;
-      }
-    }
-    
-    if (formulario.tipo === 'PESQUISA') {
-      if (!formulario.pesquisaPerguntas || formulario.pesquisaPerguntas.length === 0) {
-        toast.error('Adicione pelo menos uma pergunta à pesquisa');
-        return false;
-      }
-    }
-    
     return true;
   };
 
@@ -526,10 +539,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
             toast.error('Preencha código, nome e data de início');
             return false;
           }
-          if (!(formulario as any).gestorSelecionadoId) {
-            toast.error('Selecione um gestor para a avaliação');
-            return false;
-          }
         }
         
         // General validation for other types
@@ -598,6 +607,11 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           return false;
         }
         return true;
+      
+      case 4:
+        // Validações opcionais para configurações avançadas
+        // Não há campos obrigatórios neste step
+        return true;
         
       default:
         return true;
@@ -637,6 +651,11 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     if (currentStep > 1) {
       setCurrentStep(prev => Math.max(prev - 1, 1));
       setSecaoAtual(2); // Ao voltar para Step 1, mostra seção 2
+      
+      // Resetar o estado de auto-seleção quando voltar do step 3
+      if (currentStep === 3) {
+        setParticipantesAutoSelecionados(false);
+      }
     }
   };
 
@@ -945,7 +964,22 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     // For DESEMPENHO evaluation, filter by selected manager
     if (formulario.tipo === 'DESEMPENHO' && (formulario as any).gestorSelecionadoId) {
       const gestorId = (formulario as any).gestorSelecionadoId;
-      return getGestorEquipe(gestorId);
+      let lista = getGestorEquipe(gestorId);
+      
+      // Aplicar filtro de dias mínimos de admissão
+      const diasMinimo = (formulario as any).diasMinimoAdmissao;
+      if (diasMinimo && diasMinimo > 0) {
+        const hoje = new Date();
+        lista = lista.filter(colaborador => {
+          if (!colaborador.dataAdmissao) return true; // Incluir se não tem data de admissão
+          const dataAdmissao = new Date(colaborador.dataAdmissao);
+          const diffTime = hoje.getTime() - dataAdmissao.getTime();
+          const diffDias = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          return diffDias >= diasMinimo;
+        });
+      }
+      
+      return lista;
     }
     
     if (formulario.tipo === 'PESQUISA') {
@@ -1004,9 +1038,16 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     }
     
     // Return only scales that match the evaluation type and are active
-    return (escalasCompetencia || []).filter(escala => 
-      escala.tipo === tipoEscala && escala.ativa
-    );
+    // Sort to show default scales first (all marked as default will appear first)
+    return (escalasCompetencia || [])
+      .filter(escala => escala.tipo === tipoEscala && escala.ativa)
+      .sort((a, b) => {
+        // Escalas padrão sempre primeiro
+        if (a.padrao && !b.padrao) return -1;
+        if (!a.padrao && b.padrao) return 1;
+        // Se ambas forem ou não forem padrão, ordenar por nome
+        return a.nome.localeCompare(b.nome);
+      });
   };
 
   // Selecionar escala padrão automaticamente quando tipo mudar
@@ -1014,13 +1055,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     if (formulario.tipo && escalasCompetencia && escalasCompetencia.length > 0 && !formulario.escalaId) {
       const escalasRecomendadas = getEscalasRecomendadas();
       if (escalasRecomendadas.length > 0) {
-        // Buscar escala padrão (nome contém "Padrão" ou código contém "PDR")
-        const escalaPadrao = escalasRecomendadas.find(e => 
-          e.nome.toLowerCase().includes('padrão') || 
-          e.nome.toLowerCase().includes('padrao') ||
-          e.codigo.toLowerCase().includes('pdr')
-        );
-        // Se não encontrar, usar a primeira disponível
+        // Buscar escala marcada como padrão
+        const escalaPadrao = escalasRecomendadas.find(e => e.padrao === true);
+        // Se não encontrar uma escala padrão, usar a primeira disponível
         const escalaDefault = escalaPadrao || escalasRecomendadas[0];
         if (escalaDefault) {
           setFormulario(prev => ({ ...prev, escalaId: escalaDefault.id }));
@@ -1159,7 +1196,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Escolha o Tipo de Avaliação</h2>
-                  <p className="text-sm text-gray-600">Selecione o tipo e configure suas opções específicas</p>
+                  <p className="text-sm text-gray-600">Selecione o tipo de avaliação que deseja criar</p>
                 </div>
               </div>
 
@@ -1200,9 +1237,69 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+            )}
 
+            {/* SEÇÃO 2: INFORMAÇÕES GERAIS DA AVALIAÇÃO */}
+            {secaoAtual === 2 && (() => {
+              const tipoAvaliacaoSelecionado = tiposAvaliacao.find(t => t.tipo === formulario.tipo);
+              
+              // Mapear cores completas para cada tipo
+              const coresConfig: Record<string, { bgGradient: string; border: string; icon: string }> = {
+                'DESEMPENHO': {
+                  bgGradient: 'bg-gradient-to-r from-blue-50 to-blue-100',
+                  border: 'border-2 border-blue-200',
+                  icon: 'bg-blue-600'
+                },
+                'AVALIACAO_DIRECIONADA': {
+                  bgGradient: 'bg-gradient-to-r from-green-50 to-green-100',
+                  border: 'border-2 border-green-200',
+                  icon: 'bg-green-600'
+                },
+                'ONBOARDING': {
+                  bgGradient: 'bg-gradient-to-r from-purple-50 to-purple-100',
+                  border: 'border-2 border-purple-200',
+                  icon: 'bg-purple-600'
+                },
+                'OFFBOARDING': {
+                  bgGradient: 'bg-gradient-to-r from-red-50 to-red-100',
+                  border: 'border-2 border-red-200',
+                  icon: 'bg-red-600'
+                },
+                'FEEDBACK': {
+                  bgGradient: 'bg-gradient-to-r from-yellow-50 to-yellow-100',
+                  border: 'border-2 border-yellow-200',
+                  icon: 'bg-yellow-600'
+                },
+                'PESQUISA': {
+                  bgGradient: 'bg-gradient-to-r from-orange-50 to-orange-100',
+                  border: 'border-2 border-orange-200',
+                  icon: 'bg-orange-600'
+                }
+              };
+              
+              const cores = coresConfig[formulario.tipo] || {
+                bgGradient: 'bg-gradient-to-r from-gray-50 to-gray-100',
+                border: 'border-2 border-gray-200',
+                icon: 'bg-gray-600'
+              };
+              
+              return (
+            <div className={`${cores.bgGradient} ${cores.border} rounded-xl p-6`}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className={`w-10 h-10 ${cores.icon} rounded-lg flex items-center justify-center`}>
+                  <span className="text-white font-bold">2</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Informações Gerais</h2>
+                  <p className="text-sm text-gray-600">Defina código, nome, período e descrição da avaliação</p>
+                </div>
+              </div>
+
+              {/* Configurações específicas por tipo */}
               {formulario.tipo === 'FEEDBACK' && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
                   <h4 className="font-medium text-yellow-900 mb-3">Configuração do Feedback</h4>
                   <p className="text-sm text-yellow-700 mb-4">
                     Feedback independente de período, sem questionário, apenas texto de retorno do gestor para o subordinado.
@@ -1607,103 +1704,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 </div>
               )}
 
-              {formulario.tipo === 'DESEMPENHO' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <h4 className="font-medium text-blue-900 mb-3">Configuração da Avaliação de Desempenho</h4>
-                  
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-blue-700 mb-2">Selecione o Gestor *</label>
-                    <select
-                      value={(formulario as any).gestorSelecionadoId || ''}
-                      onChange={(e) => setFormulario(prev => ({ 
-                        ...prev, 
-                        gestorSelecionadoId: e.target.value,
-                        participantesConfig: {
-                          ...prev.participantesConfig,
-                          pessoasSelecionadas: [] // Reset selected participants when changing manager
-                        }
-                      }))}
-                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
-                    >
-                      <option value="">Selecione um gestor</option>
-                      {(colaboradores || []).filter(c => c.isGestor && c.situacao === 'ATIVO').map(gestor => (
-                        <option key={gestor.id} value={gestor.id}>
-                          {gestor.nome} - {gestor.matricula}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-blue-600 mt-1">Apenas colaboradores da equipe deste gestor aparecerão para avaliação</p>
-                    {(formulario as any).gestorSelecionadoId && (
-                      <div className="mt-2 p-2 bg-blue-100 rounded-lg">
-                        <p className="text-sm text-blue-800">
-                          <strong>Colaboradores diretos encontrados:</strong> {getGestorEquipe((formulario as any).gestorSelecionadoId).length}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
-            )}
-
-            {/* SEÇÃO 2: INFORMAÇÕES GERAIS DA AVALIAÇÃO */}
-            {secaoAtual === 2 && (() => {
-              const tipoAvaliacaoSelecionado = tiposAvaliacao.find(t => t.tipo === formulario.tipo);
-              
-              // Mapear cores completas para cada tipo
-              const coresConfig: Record<string, { bgGradient: string; border: string; icon: string }> = {
-                'DESEMPENHO': {
-                  bgGradient: 'bg-gradient-to-r from-blue-50 to-blue-100',
-                  border: 'border-2 border-blue-200',
-                  icon: 'bg-blue-600'
-                },
-                'AVALIACAO_DIRECIONADA': {
-                  bgGradient: 'bg-gradient-to-r from-green-50 to-green-100',
-                  border: 'border-2 border-green-200',
-                  icon: 'bg-green-600'
-                },
-                'ONBOARDING': {
-                  bgGradient: 'bg-gradient-to-r from-purple-50 to-purple-100',
-                  border: 'border-2 border-purple-200',
-                  icon: 'bg-purple-600'
-                },
-                'OFFBOARDING': {
-                  bgGradient: 'bg-gradient-to-r from-red-50 to-red-100',
-                  border: 'border-2 border-red-200',
-                  icon: 'bg-red-600'
-                },
-                'FEEDBACK': {
-                  bgGradient: 'bg-gradient-to-r from-yellow-50 to-yellow-100',
-                  border: 'border-2 border-yellow-200',
-                  icon: 'bg-yellow-600'
-                },
-                'PESQUISA': {
-                  bgGradient: 'bg-gradient-to-r from-orange-50 to-orange-100',
-                  border: 'border-2 border-orange-200',
-                  icon: 'bg-orange-600'
-                }
-              };
-              
-              const cores = coresConfig[formulario.tipo] || {
-                bgGradient: 'bg-gradient-to-r from-gray-50 to-gray-100',
-                border: 'border-2 border-gray-200',
-                icon: 'bg-gray-600'
-              };
-              
-              return (
-            <div className={`${cores.bgGradient} ${cores.border} rounded-xl p-6`}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className={`w-10 h-10 ${cores.icon} rounded-lg flex items-center justify-center`}>
-                  <span className="text-white font-bold">2</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Informações Gerais</h2>
-                  <p className="text-sm text-gray-600">Defina código, nome, período e descrição da avaliação</p>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Código da Avaliação *</label>
@@ -1824,6 +1824,36 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         if (formulario.tipo === 'DESEMPENHO') {
           return (
             <div className="space-y-6">
+              {/* Filtros de Avaliação */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
+                <h4 className="font-medium text-gray-900 mb-4">Filtros de Avaliação</h4>
+                <div className="space-y-4">
+                  {/* Desconsiderar admissões recentes */}
+                  <div className="p-4 bg-white rounded-lg border border-gray-200">
+                    <label className="block text-sm font-medium text-gray-900 mb-2">
+                      Desconsiderar colaboradores admitidos nos últimos X dias
+                    </label>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Define um período mínimo de admissão. Colaboradores admitidos recentemente não aparecerão para avaliação.
+                    </p>
+                    <input
+                      type="number"
+                      min="0"
+                      value={(formulario as any).diasMinimoAdmissao || ''}
+                      onChange={(e) => setFormulario(prev => ({ 
+                        ...prev, 
+                        diasMinimoAdmissao: e.target.value ? parseInt(e.target.value) : undefined
+                      }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      placeholder="Ex: 90 (dias)"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Deixe em branco para incluir todos os colaboradores independente da data de admissão
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Seleção dos Avaliados */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
                 <h4 className="font-medium text-gray-900 mb-3">Seleção dos Avaliados</h4>
@@ -1848,9 +1878,45 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                         : 'Selecionar todas'}
                     </button>
                   </div>
+                  
+                  {/* Campo de busca */}
+                  <div className="mb-3 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={filtroEquipes}
+                      onChange={(e) => setFiltroEquipes(e.target.value)}
+                      placeholder="Buscar equipe por nome, código ou gestor..."
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
                   <div className="border border-gray-300 rounded-lg p-4 max-h-96 overflow-y-auto bg-white">
                     <div className="space-y-2">
-                      {(equipes || []).filter(e => e.ativa).map(equipe => {
+                      {(() => {
+                        const equipesFiltradas = (equipes || [])
+                          .filter(e => e.ativa)
+                          .filter(equipe => {
+                            if (!filtroEquipes) return true;
+                            const filtroLower = filtroEquipes.toLowerCase();
+                            const gestorNome = (colaboradores || []).find(c => c.id === equipe.gestorId)?.nome || '';
+                            return (
+                              equipe.nome.toLowerCase().includes(filtroLower) ||
+                              equipe.codigo.toLowerCase().includes(filtroLower) ||
+                              gestorNome.toLowerCase().includes(filtroLower)
+                            );
+                          });
+
+                        if (equipesFiltradas.length === 0) {
+                          return (
+                            <div className="text-center py-8 text-gray-500">
+                              <Users className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                              <p className="text-sm">Nenhuma equipe encontrada</p>
+                            </div>
+                          );
+                        }
+
+                        return equipesFiltradas.map(equipe => {
                         const isSelected = ((formulario as any).equipesSelecionadas || []).includes(equipe.id);
                         const gestorNome = (colaboradores || []).find(c => c.id === equipe.gestorId)?.nome || 'N/A';
                         return (
@@ -1887,7 +1953,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                             </div>
                           </label>
                         );
-                      })}
+                      });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2005,11 +2072,32 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                             const novosTipos = isSelected
                               ? tiposAtuais.filter(id => id !== tipo.id)
                               : [...tiposAtuais, tipo.id];
+                            
+                            // Automaticamente adicionar/remover todas as competências do tipo
+                            const competenciasDesseTipo = (competencias || [])
+                              .filter(c => c.tipoCompetenciaId === tipo.id)
+                              .map(c => c.id);
+                            
+                            const competenciasAtuais = formulario.competenciasSelecionadas;
+                            let novasCompetencias: string[];
+                            
+                            if (isSelected) {
+                              // Remover competências deste tipo
+                              novasCompetencias = competenciasAtuais.filter(
+                                id => !competenciasDesseTipo.includes(id)
+                              );
+                            } else {
+                              // Adicionar competências deste tipo
+                              novasCompetencias = [
+                                ...competenciasAtuais,
+                                ...competenciasDesseTipo.filter(id => !competenciasAtuais.includes(id))
+                              ];
+                            }
+                            
                             setFormulario(prev => ({
                               ...prev,
                               tiposCompetenciaSelecionados: novosTipos,
-                              // Limpar competências selecionadas quando mudar os tipos
-                              competenciasSelecionadas: []
+                              competenciasSelecionadas: novasCompetencias
                             }));
                           }}
                           className="mt-1 w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -2035,30 +2123,30 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
               {/* Competências */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Competências</h3>
-                <p className="text-sm text-gray-600 mb-4">Selecione as competências que serão avaliadas</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Visualize as competências que serão avaliadas com base nos tipos selecionados acima
+                </p>
                 
                 {Object.entries(competenciasAgrupadas).map(([tipoNome, comps]) => (
                   <div key={tipoNome} className="mb-6">
                     <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
                       <Target className="w-4 h-4 text-blue-600" />
                       {tipoNome}
+                      <span className="text-xs text-gray-500 ml-2">({comps.length} competência{comps.length !== 1 ? 's' : ''})</span>
                     </h4>
                     <div className="space-y-2">
                       {comps.map((competencia) => {
                         const isSelected = formulario.competenciasSelecionadas.includes(competencia.id);
                         return (
-                          <label
+                          <div
                             key={competencia.id}
-                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                              isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                            className={`flex items-start gap-3 p-3 rounded-lg border ${
+                              isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
                             }`}
                           >
-                  <input
-                    type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleCompetenciaToggle(competencia.id)}
-                              className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
+                            <div className="flex-shrink-0 mt-1">
+                              <CheckCircle className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
+                            </div>
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
                                 {competencia.competencia}
@@ -2066,8 +2154,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                               <p className={`text-xs mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
                                 {competencia.perguntaParaAvaliar}
                               </p>
-                </div>
-                          </label>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -2075,96 +2163,14 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 ))}
 
                 {Object.keys(competenciasAgrupadas).length === 0 && (
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                    <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm">Nenhuma competência disponível</p>
+                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                    <Info className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm font-medium">Selecione um ou mais tipos de competência acima</p>
+                    <p className="text-xs mt-1">As competências relacionadas aparecerão aqui automaticamente</p>
                   </div>
                 )}
               </div>
 
-              {/* Configurações da Avaliação */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações da Avaliação</h3>
-                <div className="space-y-4">
-                  {/* Para 90º, só mostrar "Exigir justificativa" */}
-                  {((formulario as any).tipoAvaliacaoDesempenho === '90' || 
-                    (formulario as any).tipoAvaliacaoDesempenho === '180' || 
-                    (formulario as any).tipoAvaliacaoDesempenho === '360') && (
-                    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                <div>
-                        <h4 className="font-medium text-gray-900">Exigir justificativa para notas</h4>
-                        <p className="text-sm text-gray-500">Avaliadores devem justificar as notas selecionadas</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas}
-                    onChange={(e) => setFormulario(prev => ({
-                      ...prev,
-                      configuracoesAvancadas: {
-                        ...prev.configuracoesAvancadas,
-                        exigirJustificativaNotasBaixas: e.target.checked
-                      }
-                    }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                </div>
-                  )}
-
-                  {/* Mostrar lista de notas quando "Exigir justificativa" estiver marcado */}
-                  {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && formulario.escalaId && (
-                  <div className="ml-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Notas que precisam de justificativa</label>
-                      {(() => {
-                        const escalaSelecionada = (escalasCompetencia || []).find(e => e.id === formulario.escalaId);
-                        if (!escalaSelecionada || !escalaSelecionada.notas || escalaSelecionada.notas.length === 0) {
-                          return (
-                            <p className="text-sm text-gray-500">A escala selecionada não possui notas cadastradas</p>
-                          );
-                        }
-                        const notasOrdenadas = [...escalaSelecionada.notas].sort((a, b) => a.peso - b.peso);
-                        const notasSelecionadas = (formulario.configuracoesAvancadas as any).notasJustificativa || [];
-                        return (
-                          <div className="max-h-60 overflow-y-auto space-y-2 border border-gray-200 rounded-lg p-3 bg-white">
-                            {notasOrdenadas.map(nota => {
-                              const isSelected = notasSelecionadas.includes(nota.peso);
-                              return (
-                                <label
-                                  key={nota.id}
-                                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                    isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:bg-gray-50'
-                                  }`}
-                                >
-                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={(e) => {
-                                      const novasNotas = e.target.checked
-                                        ? [...notasSelecionadas, nota.peso]
-                                        : notasSelecionadas.filter((p: number) => p !== nota.peso);
-                                      setFormulario(prev => ({
-                                        ...prev,
-                                        configuracoesAvancadas: {
-                                          ...prev.configuracoesAvancadas,
-                                          notasJustificativa: novasNotas
-                                        } as any
-                                      }));
-                                    }}
-                                    className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                  />
-                                  <div className="flex-1">
-                                    <span className="text-sm font-medium text-gray-900">{nota.nota}</span>
-                                    <span className="text-xs text-gray-500 ml-2">(Peso: {nota.peso})</span>
-                </div>
-                  </label>
-                              );
-                            })}
-                </div>
-                        );
-                      })()}
-              </div>
-                  )}
-              </div>
-            </div>
           </div>
         );
         }
@@ -2294,14 +2300,25 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Gestores e Colaboradores</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Clique no gestor para ver e selecionar os colaboradores de sua equipe
+                Todos os colaboradores elegíveis já foram selecionados automaticamente. Clique no gestor para visualizar ou ajustar a seleção.
               </p>
+              
+              {(formulario as any).diasMinimoAdmissao && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-blue-800">
+                      <strong>Filtro ativo:</strong> Apenas colaboradores admitidos há {(formulario as any).diasMinimoAdmissao} dias ou mais estão sendo exibidos.
+                    </p>
+                  </div>
+                </div>
+              )}
               
               <div className="space-y-3">
                   {gestoresUnicos.map((item: any) => {
                     const { gestor, equipe } = item;
                   const colaboradoresGestor = (colaboradores || []).filter(
-                    c => c.gestorId === gestor.id && c.situacao === 'ATIVO'
+                    c => c.gestorId === gestor.id && c.situacao === 'ATIVO' && colaboradorEhElegivel(c)
                   );
                   const isExpanded = gestorExpandido === gestor.id;
                   
@@ -2513,52 +2530,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         );
 
       case 4:
-        // Para DESEMPENHO, mostrar resumo final
-        if (formulario.tipo === 'DESEMPENHO') {
-          // Calcular equipes com funcionários selecionados
-          const equipesComFuncionarios = new Set<string>();
-          formulario.participantesConfig.pessoasSelecionadas.forEach((pessoaId: string) => {
-            const colaborador = (colaboradores || []).find(c => c.id === pessoaId);
-            if (colaborador && colaborador.equipeId) {
-              equipesComFuncionarios.add(colaborador.equipeId);
-            }
-          });
-          const equipesSelecionadas = (formulario as any).equipesSelecionadas || [];
-          
-          return (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
-                <p className="text-gray-600">Revise as informações antes de criar a avaliação</p>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
-                  <div className="space-y-2 text-sm">
-                    <p><strong>Código:</strong> {formulario.codigo}</p>
-                    <p><strong>Nome:</strong> {formulario.nome}</p>
-                    <p><strong>Data Início:</strong> {formulario.dataInicio}</p>
-                    {formulario.dataFim && <p><strong>Data Fim:</strong> {formulario.dataFim}</p>}
-                </div>
-                </div>
-                
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
-                  <div className="space-y-2 text-sm">
-                    <p><strong>Equipes:</strong> {equipesComFuncionarios.size} {equipesComFuncionarios.size !== equipesSelecionadas.length && `(de ${equipesSelecionadas.length} selecionadas)`}</p>
-                    <p><strong>Tipo de Avaliação:</strong> {(formulario as any).tipoAvaliacaoDesempenho ? `${(formulario as any).tipoAvaliacaoDesempenho}°` : 'Não selecionado'}</p>
-                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
-                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-        }
-        
-          return (
+        // Para DESEMPENHO e outros tipos, mostrar configurações avançadas
+        return (
             <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações de Avaliação</h3>
@@ -2582,44 +2555,89 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                   />
                 </div>
                 
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-gray-900">Exigir justificativa para notas baixas</h4>
-                    <p className="text-sm text-gray-500">Avaliadores devem justificar notas abaixo do mínimo</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas}
-                    onChange={(e) => setFormulario(prev => ({
-                      ...prev,
-                      configuracoesAvancadas: {
-                        ...prev.configuracoesAvancadas,
-                        exigirJustificativaNotasBaixas: e.target.checked
-                      }
-                    }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  </div>
-              
-                {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && (
-                  <div className="ml-8">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nota mínima para justificativa</label>
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Exigir justificativa para notas</h4>
+                      <p className="text-sm text-gray-500">Avaliadores devem justificar as notas selecionadas</p>
+                    </div>
                     <input
-                      type="number"
-                      min="1"
-                      max="5"
-                      value={formulario.configuracoesAvancadas.notaMinimaJustificativa}
+                      type="checkbox"
+                      checked={formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas}
                       onChange={(e) => setFormulario(prev => ({
                         ...prev,
                         configuracoesAvancadas: {
                           ...prev.configuracoesAvancadas,
-                          notaMinimaJustificativa: parseInt(e.target.value) || 3
+                          exigirJustificativaNotasBaixas: e.target.checked
                         }
                       }))}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-              </div>
-                )}
+                  </div>
+              
+                  {/* Mostrar lista de notas quando "Exigir justificativa" estiver marcado */}
+                  {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && formulario.escalaId && (
+                    <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">Notas que precisam de justificativa</label>
+                      {(() => {
+                        const escalaSelecionada = (escalasCompetencia || []).find(e => e.id === formulario.escalaId);
+                        if (!escalaSelecionada || !escalaSelecionada.notas || escalaSelecionada.notas.length === 0) {
+                          return (
+                            <p className="text-sm text-gray-500">Selecione uma escala primeiro para configurar as notas</p>
+                          );
+                        }
+                        const notasOrdenadas = [...escalaSelecionada.notas].sort((a, b) => a.peso - b.peso);
+                        const notasSelecionadas = (formulario.configuracoesAvancadas as any).notasJustificativa || [];
+                        return (
+                          <div className="max-h-60 overflow-y-auto space-y-2">
+                            {notasOrdenadas.map(nota => {
+                              const isSelected = notasSelecionadas.includes(nota.peso);
+                              return (
+                                <label
+                                  key={nota.id}
+                                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                    isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      const novasNotas = e.target.checked
+                                        ? [...notasSelecionadas, nota.peso]
+                                        : notasSelecionadas.filter((p: number) => p !== nota.peso);
+                                      setFormulario(prev => ({
+                                        ...prev,
+                                        configuracoesAvancadas: {
+                                          ...prev.configuracoesAvancadas,
+                                          notasJustificativa: novasNotas
+                                        } as any
+                                      }));
+                                    }}
+                                    className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-medium text-gray-900">{nota.nota}</span>
+                                    <span className="text-xs text-gray-500 ml-2">(Peso: {nota.peso})</span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && !formulario.escalaId && (
+                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        <Info className="w-4 h-4 inline mr-1" />
+                        Selecione uma escala na etapa anterior para configurar quais notas precisam de justificativa
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
@@ -2680,6 +2698,67 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
             </div>
           </div>
         );
+
+      case 5:
+        // Resumo final para DESEMPENHO
+        if (formulario.tipo === 'DESEMPENHO') {
+          // Calcular equipes com funcionários selecionados
+          const equipesComFuncionarios = new Set<string>();
+          formulario.participantesConfig.pessoasSelecionadas.forEach((pessoaId: string) => {
+            const colaborador = (colaboradores || []).find(c => c.id === pessoaId);
+            if (colaborador && colaborador.equipeId) {
+              equipesComFuncionarios.add(colaborador.equipeId);
+            }
+          });
+          const equipesSelecionadas = (formulario as any).equipesSelecionadas || [];
+          
+          return (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Revisão e Confirmação</h3>
+                <p className="text-gray-600">Revise as informações antes de criar a avaliação</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Informações Básicas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Código:</strong> {formulario.codigo}</p>
+                    <p><strong>Nome:</strong> {formulario.nome}</p>
+                    <p><strong>Data Início:</strong> {formulario.dataInicio}</p>
+                    {formulario.dataFim && <p><strong>Data Fim:</strong> {formulario.dataFim}</p>}
+                  </div>
+                </div>
+                
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Equipes:</strong> {equipesComFuncionarios.size} {equipesComFuncionarios.size !== equipesSelecionadas.length && `(de ${equipesSelecionadas.length} selecionadas)`}</p>
+                    <p><strong>Tipo de Avaliação:</strong> {(formulario as any).tipoAvaliacaoDesempenho ? `${(formulario as any).tipoAvaliacaoDesempenho}°` : 'Não selecionado'}</p>
+                    <p><strong>Escala:</strong> {(escalasCompetencia || []).find(e => e.id === formulario.escalaId)?.nome || 'Não selecionada'}</p>
+                    <p><strong>Competências:</strong> {formulario.competenciasSelecionadas.length}</p>
+                    <p><strong>Participantes:</strong> {formulario.participantesConfig.pessoasSelecionadas.length}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Configurações Avançadas</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Exigir justificativa:</strong> {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas ? 'Sim' : 'Não'}</p>
+                    {formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas && (formulario.configuracoesAvancadas as any).notasJustificativa?.length > 0 && (
+                      <p><strong>Notas que precisam de justificativa:</strong> {(formulario.configuracoesAvancadas as any).notasJustificativa.length} nota(s)</p>
+                    )}
+                    <p><strong>Permitir comentários:</strong> {formulario.configuracoesAvancadas.permitirAvaliadoComentarios ? 'Sim' : 'Não'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        // Para outros tipos, o resumo já é mostrado no step anterior
+        return null;
 
       default:
         return null;
@@ -2750,10 +2829,8 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           </button>
 
           {(() => {
-            // Para DESEMPENHO, step 4 é o último (Revisão e Confirmação)
-            const isLastStep = formulario.tipo === 'DESEMPENHO' 
-              ? currentStep === 4 
-              : currentStep >= steps.length;
+            // Verificar se é o último step baseado no tipo de avaliação
+            const isLastStep = currentStep >= steps.length;
             
             if (isLastStep) {
               return (
