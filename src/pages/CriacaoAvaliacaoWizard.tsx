@@ -83,8 +83,6 @@ interface FormularioAvaliacaoWizard {
   tiposCompetenciaSelecionados?: string[]; // IDs dos tipos de competência selecionados (Técnica, Comportamental)
   gestorSelecionadoId?: string; // ID do gestor selecionado
   diasMinimoAdmissao?: number; // Número de dias mínimos de admissão para incluir colaborador
-  gestorSelecionadoId?: string; // ID do gestor selecionado
-  diasMinimoAdmissao?: number; // Número de dias mínimos de admissão para incluir colaborador
 
   // Special Workflows Fields
   // OnBoarding specific
