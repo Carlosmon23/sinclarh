@@ -253,7 +253,17 @@ const CriacaoAvaliacao: React.FC = () => {
   };
 
   const getCompetenciasPorTipo = () => {
-    const competenciasAgrupadas = (competencias || []).reduce((acc, comp) => {
+    // Filtrar competências pelo destino (apenas DESEMPENHO, pois essa página cria apenas avaliações de desempenho)
+    const competenciasFiltradasPorDestino = (competencias || []).filter(comp => {
+      const tipoComp = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
+      if (!tipoComp || !tipoComp.destinos || tipoComp.destinos.length === 0) {
+        return false; // Se não tem destino definido, não mostrar
+      }
+      // Verificar se DESEMPENHO está nos destinos permitidos
+      return tipoComp.destinos.includes('DESEMPENHO');
+    });
+
+    const competenciasAgrupadas = competenciasFiltradasPorDestino.reduce((acc, comp) => {
       const tipo = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
       const tipoNome = tipo?.nome || 'Outros';
       

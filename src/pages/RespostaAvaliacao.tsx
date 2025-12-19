@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, User, Building2, Briefcase, AlertTriangle } from 'lucide-react';
+import { Save, Send, User, Building2, Briefcase, AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useDataStore } from '../stores/dataStore';
 import { useAuthStore } from '../stores/authStore';
 
@@ -13,6 +13,7 @@ interface RespostaCompetencia {
 
 const RespostaAvaliacao: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const participanteIdFromUrl = searchParams.get('participante');
   
   const { 
@@ -205,6 +206,14 @@ const RespostaAvaliacao: React.FC = () => {
     return nota?.nota || '';
   };
 
+  // Verificar se uma nota requer justificativa
+  const notaRequerJustificativa = (peso: number): boolean => {
+    if (!avaliacaoAtual?.notasJustificativa || avaliacaoAtual.notasJustificativa.length === 0) {
+      return false;
+    }
+    return avaliacaoAtual.notasJustificativa.includes(peso);
+  };
+
   // Calcular média da avaliação
   const calcularMedia = () => {
     const respostasComNota = respostas.filter(r => r.escala > 0);
@@ -272,6 +281,17 @@ const RespostaAvaliacao: React.FC = () => {
       return;
     }
 
+    // Validar se todas as justificativas obrigatórias foram preenchidas
+    const justificativasFaltantes = respostas.filter(r => {
+      if (r.escala === 0) return false; // Já foi validado acima
+      return notaRequerJustificativa(r.escala) && !r.justificativa?.trim();
+    });
+    
+    if (justificativasFaltantes.length > 0) {
+      toast.error(`Preencha a justificativa obrigatória para ${justificativasFaltantes.length} competência(s)`);
+      return;
+    }
+
     respostas.forEach(resposta => {
       const respostaExistente = (respostasAvaliacao || []).find(r => 
         r.avaliacaoParticipanteId === participanteSelecionado &&
@@ -302,10 +322,21 @@ const RespostaAvaliacao: React.FC = () => {
 
     toast.success('Avaliação finalizada com sucesso!');
     
-    // Reset
+    // Reset e navegar para minhas avaliações
     setAvaliacaoSelecionada('');
     setParticipanteSelecionado('');
     setRespostas([]);
+    navigate('/minhas-avaliacoes');
+  };
+
+  const handleCancelar = () => {
+    if (window.confirm('Deseja realmente cancelar? As alterações não salvas serão perdidas.')) {
+      // Reset
+      setAvaliacaoSelecionada('');
+      setParticipanteSelecionado('');
+      setRespostas([]);
+      navigate('/minhas-avaliacoes');
+    }
   };
 
   const isAvaliacao180 = avaliacaoAtual?.tipoAvaliacao === '180';
@@ -426,9 +457,11 @@ const RespostaAvaliacao: React.FC = () => {
                         AVALIAÇÃO SUBORDINADO
                       </th>
                     )}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
-                      CONSIDERAÇÕES
-                    </th>
+                    {(avaliacaoAtual?.notasJustificativa && avaliacaoAtual.notasJustificativa.length > 0) && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                        CONSIDERAÇÕES
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -480,15 +513,20 @@ const RespostaAvaliacao: React.FC = () => {
                             )}
                           </td>
                         )}
-                        <td className="px-6 py-4">
-                          <textarea
-                            value={resposta.justificativa}
-                            onChange={(e) => handleRespostaChange(competencia.id, 'justificativa', e.target.value)}
-                            placeholder="Adicione considerações sobre esta competência..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                            rows={2}
-                          />
-                        </td>
+                        {(avaliacaoAtual?.notasJustificativa && avaliacaoAtual.notasJustificativa.length > 0) && (
+                          <td className="px-6 py-4">
+                            {notaRequerJustificativa(resposta.escala) ? (
+                              <textarea
+                                value={resposta.justificativa}
+                                onChange={(e) => handleRespostaChange(competencia.id, 'justificativa', e.target.value)}
+                                placeholder="Justificativa obrigatória para esta nota..."
+                                className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm bg-red-50"
+                                rows={2}
+                                required
+                              />
+                            ) : null}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -520,21 +558,30 @@ const RespostaAvaliacao: React.FC = () => {
           </div>
 
           {/* Botões de Ação */}
-          <div className="flex justify-end gap-4 mt-6">
+          <div className="flex justify-between items-center mt-6">
             <button
-              onClick={handleSalvarRascunho}
+              onClick={handleCancelar}
               className="inline-flex items-center px-6 py-3 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-colors font-medium"
             >
-              <Save className="w-5 h-5 mr-2" />
-              Salvar
+              <X className="w-5 h-5 mr-2" />
+              Cancelar
             </button>
-            <button
-              onClick={handleFinalizar}
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              <Send className="w-5 h-5 mr-2" />
-              Finalizar
-            </button>
+            <div className="flex gap-4">
+              <button
+                onClick={handleSalvarRascunho}
+                className="inline-flex items-center px-6 py-3 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              >
+                <Save className="w-5 h-5 mr-2" />
+                Salvar
+              </button>
+              <button
+                onClick={handleFinalizar}
+                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Send className="w-5 h-5 mr-2" />
+                Finalizar
+              </button>
+            </div>
           </div>
         </>
       )}

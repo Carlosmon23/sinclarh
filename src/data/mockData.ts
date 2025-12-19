@@ -265,6 +265,7 @@ export const mockTiposCompetencia: TipoCompetencia[] = [
     id: 'tipo-001',
     nome: 'TECNICA',
     descricao: 'Competências técnicas específicas do cargo',
+    destinos: ['DESEMPENHO', 'AVALIACAO_DIRECIONADA'],
     empresaId: 'emp-001',
     ativo: true,
     criadoEm: '2024-01-01T00:00:00Z',
@@ -274,6 +275,7 @@ export const mockTiposCompetencia: TipoCompetencia[] = [
     id: 'tipo-002',
     nome: 'COMPORTAMENTAL',
     descricao: 'Competências comportamentais e soft skills',
+    destinos: ['DESEMPENHO', 'AVALIACAO_DIRECIONADA', 'ONBOARDING', 'OFFBOARDING'],
     empresaId: 'emp-001',
     ativo: true,
     criadoEm: '2024-01-01T00:00:00Z',
@@ -283,6 +285,7 @@ export const mockTiposCompetencia: TipoCompetencia[] = [
     id: 'tipo-003',
     nome: 'CLIMA',
     descricao: 'Competências relacionadas ao clima organizacional',
+    destinos: [], // CLIMA não é mais um destino válido, será removido ou ajustado conforme necessidade
     empresaId: 'emp-001',
     ativo: true,
     criadoEm: '2024-01-01T00:00:00Z',

@@ -9,9 +9,17 @@ const TiposCompetencia: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTipo, setEditingTipo] = useState<TipoCompetencia | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const destinosDisponiveis: Array<{ value: 'DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING', label: string }> = [
+    { value: 'DESEMPENHO', label: 'Avaliação de Desempenho' },
+    { value: 'AVALIACAO_DIRECIONADA', label: 'Avaliação Direcionada' },
+    { value: 'ONBOARDING', label: 'Onboarding' },
+    { value: 'OFFBOARDING', label: 'Offboarding' }
+  ];
+
   const [formData, setFormData] = useState({
     nome: '',
     descricao: '',
+    destinos: [] as ('DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'CLIMA' | 'ONBOARDING' | 'OFFBOARDING')[],
     empresaId: 'emp-001',
     ativo: true
   });
@@ -29,6 +37,11 @@ const TiposCompetencia: React.FC = () => {
       return;
     }
 
+    if (formData.destinos.length === 0) {
+      toast.error('Selecione pelo menos um destino para este tipo de competência');
+      return;
+    }
+
     if (editingTipo) {
       updateTipoCompetencia(editingTipo.id, formData);
       toast.success('Tipo de competência atualizado com sucesso!');
@@ -41,7 +54,7 @@ const TiposCompetencia: React.FC = () => {
   };
 
   const resetForm = () => {
-    setFormData({ nome: '', descricao: '', empresaId: 'emp-001', ativo: true });
+    setFormData({ nome: '', descricao: '', destinos: [], empresaId: 'emp-001', ativo: true });
     setEditingTipo(null);
     setIsModalOpen(false);
   };
@@ -51,6 +64,7 @@ const TiposCompetencia: React.FC = () => {
     setFormData({
       nome: tipo.nome,
       descricao: tipo.descricao,
+      destinos: tipo.destinos || [],
       empresaId: tipo.empresaId,
       ativo: tipo.ativo
     });
@@ -89,33 +103,73 @@ const TiposCompetencia: React.FC = () => {
         </div>
 
         {isModalOpen && (
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nome *
-              </label>
-              <input
-                type="text"
-                value={formData.nome}
-                onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Ex: TÉCNICA, COMPORTAMENTAL"
-                required
-              />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome *
+                </label>
+                <input
+                  type="text"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Ex: TÉCNICA, COMPORTAMENTAL"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descrição
+                </label>
+                <input
+                  type="text"
+                  value={formData.descricao}
+                  onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Descrição do tipo de competência"
+                />
+              </div>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Descrição
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Destino * <span className="text-gray-500 text-xs">(Tipos de avaliação onde este tipo de competência pode ser utilizado)</span>
               </label>
-              <input
-                type="text"
-                value={formData.descricao}
-                onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Descrição do tipo de competência"
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {destinosDisponiveis.map((destino) => (
+                  <label
+                    key={destino.value}
+                    className="flex items-center gap-2 p-3 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.destinos.includes(destino.value)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setFormData({
+                            ...formData,
+                            destinos: [...formData.destinos, destino.value]
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            destinos: formData.destinos.filter(d => d !== destino.value)
+                          });
+                        }
+                      }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">{destino.label}</span>
+                  </label>
+                ))}
+              </div>
+              {formData.destinos.length === 0 && (
+                <p className="text-xs text-red-600 mt-1">Selecione pelo menos um destino</p>
+              )}
             </div>
-            <div className="md:col-span-2 flex gap-2">
+
+            <div className="flex gap-2 pt-2">
               <button
                 type="submit"
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
@@ -163,6 +217,9 @@ const TiposCompetencia: React.FC = () => {
                   Descrição
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Destino
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Ações
                 </th>
               </tr>
@@ -178,6 +235,22 @@ const TiposCompetencia: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {tipo.descricao || '-'}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    <div className="flex flex-wrap gap-1">
+                      {(tipo.destinos || []).length > 0 ? (
+                        (tipo.destinos || []).map((destino) => (
+                          <span
+                            key={destino}
+                            className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {destinosDisponiveis.find(d => d.value === destino)?.label || destino}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-gray-400 text-xs">Nenhum destino definido</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex gap-2">

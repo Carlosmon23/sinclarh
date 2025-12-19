@@ -88,6 +88,7 @@ export interface TipoCompetencia {
   id: string;
   nome: string;
   descricao: string;
+  destinos: ('DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING')[]; // Tipos de avaliação onde este tipo pode ser usado
   empresaId: string;
   ativo: boolean;
   criadoEm: string;
@@ -149,6 +150,7 @@ export interface AvaliacaoCiclo {
   escala?: EscalaCompetencia;
   competenciasSelecionadas?: string[];
   instrucoes?: string;
+  notasJustificativa?: number[]; // Notas (pesos) que requerem justificativa obrigatória
   empresaId: string;
   criadaEm: string;
   atualizadaEm: string;

@@ -685,6 +685,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           escalaId: formulario.escalaId,
           competenciasSelecionadas: competenciasOnboarding.map(c => c.id),
           instrucoes: formulario.instrucoes || 'Esta é uma avaliação de OnBoarding para novos colaboradores.',
+          notasJustificativa: formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas 
+            ? (formulario.configuracoesAvancadas.notasJustificativa || [])
+            : undefined,
           empresaId: 'emp-001'
         };
         
@@ -713,6 +716,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           escalaId: formulario.escalaId,
           competenciasSelecionadas: competenciasOffboarding.map(c => c.id),
           instrucoes: formulario.instrucoes || 'Esta é uma avaliação de OffBoarding para colaboradores desligados.',
+          notasJustificativa: formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas 
+            ? (formulario.configuracoesAvancadas.notasJustificativa || [])
+            : undefined,
           empresaId: 'emp-001'
         };
         
@@ -732,6 +738,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           escalaId: formulario.escalaId,
           competenciasSelecionadas: [], // No competencies for feedback
           instrucoes: formulario.instrucoes || 'Forneça feedback construtivo sobre o desempenho do colaborador.',
+          notasJustificativa: formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas 
+            ? (formulario.configuracoesAvancadas.notasJustificativa || [])
+            : undefined,
           empresaId: 'emp-001'
         };
         
@@ -751,6 +760,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           escalaId: formulario.escalaId,
           competenciasSelecionadas: [], // No competencies for surveys
           instrucoes: formulario.instrucoes || 'Responda às perguntas da pesquisa com sinceridade.',
+          notasJustificativa: formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas 
+            ? (formulario.configuracoesAvancadas.notasJustificativa || [])
+            : undefined,
           empresaId: 'emp-001'
         };
         
@@ -783,6 +795,9 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
           escalaId: formulario.escalaId,
           competenciasSelecionadas: formulario.competenciasSelecionadas,
           instrucoes: formulario.instrucoes,
+          notasJustificativa: formulario.configuracoesAvancadas.exigirJustificativaNotasBaixas 
+            ? (formulario.configuracoesAvancadas.notasJustificativa || [])
+            : undefined,
           empresaId: 'emp-001'
         };
       }
@@ -1108,7 +1123,11 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
   const getCompetenciasPorTipoEspecial = (tipo: 'ONBOARDING' | 'OFFBOARDING') => {
     return (competencias || []).filter(comp => {
       const tipoComp = tiposCompetencia?.find(t => t.id === comp.tipoCompetenciaId);
-      return tipoComp?.nome?.toLowerCase().includes(tipo.toLowerCase());
+      if (!tipoComp || !tipoComp.destinos || tipoComp.destinos.length === 0) {
+        return false;
+      }
+      // Verificar se o tipo de avaliação está nos destinos permitidos
+      return tipoComp.destinos.includes(tipo);
     });
   };
 
@@ -1154,12 +1173,21 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     }
   }, [currentStep, formulario.tipo]);
 
-  // Filtrar competências pelos tipos selecionados para DESEMPENHO
+  // Filtrar competências pelos tipos selecionados para DESEMPENHO e por destino do tipo de competência
   const getCompetenciasAgrupadas = () => {
-    const todasCompetencias = getCompetenciasPorTipo();
+    // Primeiro, filtrar competências pelo destino (tipo de avaliação)
+    const competenciasFiltradasPorDestino = (competencias || []).filter(comp => {
+      const tipoComp = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
+      if (!tipoComp || !tipoComp.destinos || tipoComp.destinos.length === 0) {
+        return false; // Se não tem destino definido, não mostrar
+      }
+      // Verificar se o tipo de avaliação atual está nos destinos permitidos
+      return tipoComp.destinos.includes(formulario.tipo);
+    });
+
+    // Para DESEMPENHO, também filtrar pelos tipos de competência selecionados
     if (formulario.tipo === 'DESEMPENHO' && formulario.tiposCompetenciaSelecionados && formulario.tiposCompetenciaSelecionados.length > 0) {
-      // Filtrar apenas os tipos selecionados
-      const competenciasFiltradas = (competencias || []).filter(comp => 
+      const competenciasFiltradas = competenciasFiltradasPorDestino.filter(comp => 
         formulario.tiposCompetenciaSelecionados!.includes(comp.tipoCompetenciaId)
       );
       return competenciasFiltradas.reduce((acc, comp) => {
@@ -1172,7 +1200,17 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         return acc;
       }, {} as Record<string, typeof competencias>);
     }
-    return todasCompetencias;
+    
+    // Para outros tipos de avaliação, agrupar por tipo de competência
+    return competenciasFiltradasPorDestino.reduce((acc, comp) => {
+      const tipo = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
+      const tipoNome = tipo?.nome || 'Outros';
+      if (!acc[tipoNome]) {
+        acc[tipoNome] = [];
+      }
+      acc[tipoNome].push(comp);
+      return acc;
+    }, {} as Record<string, typeof competencias>);
   };
 
   const competenciasAgrupadas = getCompetenciasAgrupadas();
@@ -2048,10 +2086,13 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Tipo de Competência *</h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Selecione o tipo de competência que será avaliada. O sistema carregará automaticamente as competências baseadas nas funções dos colaboradores das equipes selecionadas.
+                  Selecione o tipo de competência que será avaliada. O sistema selecionará automaticamente todas as competências dos tipos escolhidos que são compatíveis com este tipo de avaliação.
                 </p>
                 <div className="space-y-3">
-                  {(tiposCompetencia || []).map((tipo) => {
+                  {(tiposCompetencia || []).filter(tipo => 
+                    // Filtrar tipos que têm o destino correto para este tipo de avaliação
+                    tipo.destinos && tipo.destinos.length > 0 && tipo.destinos.includes(formulario.tipo)
+                  ).map((tipo) => {
                     const isSelected = (formulario.tiposCompetenciaSelecionados || []).includes(tipo.id);
                     return (
                       <label
@@ -2071,9 +2112,15 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                               ? tiposAtuais.filter(id => id !== tipo.id)
                               : [...tiposAtuais, tipo.id];
                             
-                            // Automaticamente adicionar/remover todas as competências do tipo
+                            // Automaticamente adicionar/remover todas as competências do tipo que têm o destino correto
                             const competenciasDesseTipo = (competencias || [])
-                              .filter(c => c.tipoCompetenciaId === tipo.id)
+                              .filter(c => {
+                                // Filtrar por tipo de competência
+                                if (c.tipoCompetenciaId !== tipo.id) return false;
+                                // Filtrar por destino - verificar se o tipo de competência tem o destino correto
+                                if (!tipo.destinos || tipo.destinos.length === 0) return false;
+                                return tipo.destinos.includes(formulario.tipo);
+                              })
                               .map(c => c.id);
                             
                             const competenciasAtuais = formulario.competenciasSelecionadas;
@@ -2118,56 +2165,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Competências */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Competências</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Visualize as competências que serão avaliadas com base nos tipos selecionados acima
-                </p>
-                
-                {Object.entries(competenciasAgrupadas).map(([tipoNome, comps]) => (
-                  <div key={tipoNome} className="mb-6">
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                      <Target className="w-4 h-4 text-blue-600" />
-                      {tipoNome}
-                      <span className="text-xs text-gray-500 ml-2">({comps.length} competência{comps.length !== 1 ? 's' : ''})</span>
-                    </h4>
-                    <div className="space-y-2">
-                      {comps.map((competencia) => {
-                        const isSelected = formulario.competenciasSelecionadas.includes(competencia.id);
-                        return (
-                          <div
-                            key={competencia.id}
-                            className={`flex items-start gap-3 p-3 rounded-lg border ${
-                              isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
-                            }`}
-                          >
-                            <div className="flex-shrink-0 mt-1">
-                              <CheckCircle className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
-                                {competencia.competencia}
-                              </p>
-                              <p className={`text-xs mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                                {competencia.perguntaParaAvaliar}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-
-                {Object.keys(competenciasAgrupadas).length === 0 && (
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-                    <Info className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm font-medium">Selecione um ou mais tipos de competência acima</p>
-                    <p className="text-xs mt-1">As competências relacionadas aparecerão aqui automaticamente</p>
-                  </div>
-                )}
-              </div>
 
           </div>
         );
@@ -2219,54 +2216,6 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
               )}
               </div>
         
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Competências</h3>
-              <p className="text-sm text-gray-600 mb-4">Selecione as competências que serão avaliadas</p>
-              
-              {Object.entries(competenciasAgrupadas).map(([tipoNome, comps]) => (
-                <div key={tipoNome} className="mb-6">
-                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-blue-600" />
-                    {tipoNome}
-                  </h4>
-                  <div className="space-y-2">
-                    {comps.map((competencia) => {
-                      const isSelected = formulario.competenciasSelecionadas.includes(competencia.id);
-                      return (
-                        <label
-                          key={competencia.id}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                            isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleCompetenciaToggle(competencia.id)}
-                            className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
-                              {competencia.competencia}
-                            </p>
-                            <p className={`text-xs mt-1 ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                              {competencia.perguntaParaAvaliar}
-                            </p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {Object.keys(competenciasAgrupadas).length === 0 && (
-                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm">Nenhuma competência disponível</p>
-                </div>
-              )}
-            </div>
           </div>
         );
         
