@@ -19,7 +19,7 @@ const TiposCompetencia: React.FC = () => {
   const [formData, setFormData] = useState({
     nome: '',
     descricao: '',
-    destinos: [] as ('DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'CLIMA' | 'ONBOARDING' | 'OFFBOARDING')[],
+    destinos: [] as ('DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING')[],
     empresaId: 'emp-001',
     ativo: true
   });

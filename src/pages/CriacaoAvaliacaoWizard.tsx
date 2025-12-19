@@ -1173,8 +1173,18 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
     }
   }, [currentStep, formulario.tipo]);
 
+  // Função auxiliar para verificar se um tipo de avaliação é válido para destinos
+  const isTipoValidoParaDestino = (tipo: TipoAvaliacao): tipo is 'DESEMPENHO' | 'AVALIACAO_DIRECIONADA' | 'ONBOARDING' | 'OFFBOARDING' => {
+    return tipo === 'DESEMPENHO' || tipo === 'AVALIACAO_DIRECIONADA' || tipo === 'ONBOARDING' || tipo === 'OFFBOARDING';
+  };
+
   // Filtrar competências pelos tipos selecionados para DESEMPENHO e por destino do tipo de competência
   const getCompetenciasAgrupadas = () => {
+    // Se o tipo não é válido para destinos, retornar array vazio
+    if (!isTipoValidoParaDestino(formulario.tipo)) {
+      return {};
+    }
+
     // Primeiro, filtrar competências pelo destino (tipo de avaliação)
     const competenciasFiltradasPorDestino = (competencias || []).filter(comp => {
       const tipoComp = (tiposCompetencia || []).find(t => t.id === comp.tipoCompetenciaId);
@@ -1182,6 +1192,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
         return false; // Se não tem destino definido, não mostrar
       }
       // Verificar se o tipo de avaliação atual está nos destinos permitidos
+      if (!isTipoValidoParaDestino(formulario.tipo)) return false;
       return tipoComp.destinos.includes(formulario.tipo);
     });
 
@@ -2089,10 +2100,12 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                   Selecione o tipo de competência que será avaliada. O sistema selecionará automaticamente todas as competências dos tipos escolhidos que são compatíveis com este tipo de avaliação.
                 </p>
                 <div className="space-y-3">
-                  {(tiposCompetencia || []).filter(tipo => 
+                  {(tiposCompetencia || []).filter(tipo => {
                     // Filtrar tipos que têm o destino correto para este tipo de avaliação
-                    tipo.destinos && tipo.destinos.length > 0 && tipo.destinos.includes(formulario.tipo)
-                  ).map((tipo) => {
+                    if (!tipo.destinos || tipo.destinos.length === 0) return false;
+                    if (!isTipoValidoParaDestino(formulario.tipo)) return false;
+                    return tipo.destinos.includes(formulario.tipo);
+                  }).map((tipo) => {
                     const isSelected = (formulario.tiposCompetenciaSelecionados || []).includes(tipo.id);
                     return (
                       <label
@@ -2119,6 +2132,7 @@ const CriacaoAvaliacaoWizard: React.FC = () => {
                                 if (c.tipoCompetenciaId !== tipo.id) return false;
                                 // Filtrar por destino - verificar se o tipo de competência tem o destino correto
                                 if (!tipo.destinos || tipo.destinos.length === 0) return false;
+                                if (!isTipoValidoParaDestino(formulario.tipo)) return false;
                                 return tipo.destinos.includes(formulario.tipo);
                               })
                               .map(c => c.id);
